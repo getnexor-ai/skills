@@ -1,0 +1,47 @@
+{
+  "name": "@nexor/skills",
+  "version": "0.2.0",
+  "description": "Publicly shareable Agent Skills from the Nexor team — prompt engineering, agent playbooks, and industry onboarding.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agent-skills",
+    "skills",
+    "prompt-engineering",
+    "ai-agent",
+    "mcp"
+  ],
+  "homepage": "https://github.com/DropoutCapital/nexor-public-skills#readme",
+  "bugs": {
+    "url": "https://github.com/DropoutCapital/nexor-public-skills/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DropoutCapital/nexor-public-skills.git"
+  },
+  "license": "MIT",
+  "author": "Nexor <ian@getnexor.ai>",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./skills/*": "./skills/*"
+  },
+  "bin": {
+    "nexor-skills": "bin/install.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "skills",
+    ".claude-plugin",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
