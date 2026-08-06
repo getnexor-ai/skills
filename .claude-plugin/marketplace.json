@@ -40,6 +40,15 @@
       ]
     },
     {
+      "name": "sales-collateral",
+      "description": "Customer-facing collateral generators: branded Nexor proposal one-pagers (HTML + PDF) personalized per prospect.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/proposal-builder"
+      ]
+    },
+    {
       "name": "industry-onboarding",
       "description": "Vertical sales-qualification playbooks for onboarding a conversational agent to a new industry: what a good business answer covers, deal-breakers, vocabulary to mirror, and objection handling.",
       "source": "./",

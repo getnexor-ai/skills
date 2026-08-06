@@ -94,6 +94,11 @@ cp -R nexor-public-skills/skills/voice-scripting-v3 ~/.claude/skills/
 | [`query-catalog`](./skills/query-catalog) | A canonical‑query catalog so an analytics agent runs one deterministic query per metric. |
 | [`ideal-lead-profile`](./skills/ideal-lead-profile) | Scoring the "ideal lead" by depth of two‑way engagement rather than budget or outbound volume. |
 
+### 📄 Sales collateral — customer-facing documents
+| Skill | What it teaches |
+|---|---|
+| [`proposal-builder`](./skills/proposal-builder) | Generating branded, print‑ready Nexor proposal one‑pagers (HTML + PDF) personalized per prospect: master template, copy playbook, and render pipeline. |
+
 ### 🏭 Industry onboarding — vertical qualification playbooks
 | Skill | What it teaches |
 |---|---|
