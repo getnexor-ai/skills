@@ -26,17 +26,18 @@ if (has("--help") || has("-h")) {
   process.exit(0);
 }
 
-if (!existsSync(SKILLS_SRC)) {
-  console.error(`No skills/ directory found next to this script (${SKILLS_SRC}).`);
-  process.exit(1);
-}
-
-const available = readdirSync(SKILLS_SRC)
-  .filter((d) => existsSync(path.join(SKILLS_SRC, d, "SKILL.md")))
-  .sort();
+const available = existsSync(SKILLS_SRC)
+  ? readdirSync(SKILLS_SRC)
+      .filter((d) => existsSync(path.join(SKILLS_SRC, d, "SKILL.md")))
+      .sort()
+  : [];
 
 if (has("--list")) {
-  console.log("Available skills:\n" + available.map((s) => "  - " + s).join("\n"));
+  console.log(
+    available.length
+      ? "Available skills:\n" + available.map((s) => "  - " + s).join("\n")
+      : "No skills are currently available.",
+  );
   process.exit(0);
 }
 
@@ -59,6 +60,11 @@ if (unknown.length) {
   process.exit(1);
 }
 const selected = requested.length ? requested : available;
+
+if (!selected.length) {
+  console.log("No skills are currently available to install.");
+  process.exit(0);
+}
 
 mkdirSync(dest, { recursive: true });
 let installed = 0;
@@ -92,7 +98,7 @@ Default destination: ~/.claude/skills  (user level, available in every project)
 Examples:
   npx @nexor/skills                       install every skill into ~/.claude/skills
   npx @nexor/skills --project             install every skill into ./.claude/skills
-  npx @nexor/skills voice-scripting-v3    install a single skill
+  npx @nexor/skills <skill-name>          install a single skill
   npx @nexor/skills --list
 `);
 }

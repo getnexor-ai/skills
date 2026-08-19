@@ -6,62 +6,16 @@
   },
   "metadata": {
     "description": "Publicly shareable Agent Skills from the Nexor team",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
-      "name": "prompt-engineering",
-      "description": "How Nexor writes agent prompts: canonical prompt-engineering doctrine, a pre-ship rewrite checklist, XML-tag discipline, voice/TTS scripting, and house style.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/claude-prompt-fundamentals",
-        "./skills/prompt-rewrite-checklist",
-        "./skills/xml-tag-discipline",
-        "./skills/voice-scripting-v3",
-        "./skills/nexor-prompt-style"
-      ]
-    },
-    {
       "name": "agent-playbooks",
-      "description": "Building conversational-agent capabilities: booking-provider integration, appointment reminders, WhatsApp/Meta templates, workflow-wide config changes, executive routing, and analytics/text-to-SQL patterns.",
+      "description": "Building conversational-agent capabilities on Nexor: mapping customer use cases to an exact configuration of agents, statuses, webhooks, functions, jobs, and transfers.",
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/add-booking-provider",
-        "./skills/appointment-reminders-playbook",
-        "./skills/whatsapp-template-marketer",
-        "./skills/meta-whatsapp-templates-spec",
-        "./skills/how-to-update-all-workflow",
-        "./skills/how-to-manage-executives",
-        "./skills/data-analysis-playbook",
-        "./skills/query-catalog",
-        "./skills/ideal-lead-profile"
-      ]
-    },
-    {
-      "name": "sales-collateral",
-      "description": "Customer-facing collateral generators: branded Nexor proposal one-pagers (HTML + PDF) personalized per prospect.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/proposal-builder"
-      ]
-    },
-    {
-      "name": "industry-onboarding",
-      "description": "Vertical sales-qualification playbooks for onboarding a conversational agent to a new industry: what a good business answer covers, deal-breakers, vocabulary to mirror, and objection handling.",
-      "source": "./",
-      "strict": false,
-      "skills": [
-        "./skills/real-estate",
-        "./skills/healthcare",
-        "./skills/saas-b2b",
-        "./skills/ecommerce",
-        "./skills/education",
-        "./skills/fitness",
-        "./skills/hospitality",
-        "./skills/generic"
+        "./skills/automation-architecture"
       ]
     }
   ]

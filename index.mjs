@@ -1,10 +1,10 @@
 // @nexor/skills — programmatic access to the bundled Agent Skills.
 //
 //   import { list, read, skillsDir, meta } from "@nexor/skills";
-//   list();                       // -> ["add-booking-provider", ...]
-//   read("voice-scripting-v3");   // -> the SKILL.md contents (string)
+//   list();                       // -> ["skill-name", ...]
+//   read("skill-name");           // -> the SKILL.md contents (string)
 //   skillsDir;                    // -> absolute path to the skills/ folder
-//   meta("voice-scripting-v3");   // -> { name, description }
+//   meta("skill-name");           // -> { name, description }
 //
 // Zero dependencies. Point your own agent's skill loader at `skillsDir`,
 // or read individual skills to build a picker.
@@ -21,6 +21,7 @@ export const skillsDir = path.join(
 
 /** Names of every bundled skill (a folder with a SKILL.md), sorted. */
 export function list() {
+  if (!existsSync(skillsDir)) return [];
   return readdirSync(skillsDir)
     .filter((d) => existsSync(path.join(skillsDir, d, "SKILL.md")))
     .sort();

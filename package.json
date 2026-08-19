@@ -1,7 +1,7 @@
 {
   "name": "@nexor/skills",
-  "version": "0.2.0",
-  "description": "Publicly shareable Agent Skills from the Nexor team — prompt engineering, agent playbooks, and industry onboarding.",
+  "version": "0.3.0",
+  "description": "Publicly shareable Agent Skills from the Nexor team.",
   "keywords": [
     "claude",
     "claude-code",
@@ -38,6 +38,10 @@
     "README.md",
     "LICENSE"
   ],
+  "scripts": {
+    "check": "node scripts/prepublish-check.mjs",
+    "prepublishOnly": "node scripts/prepublish-check.mjs"
+  },
   "engines": {
     "node": ">=18"
   },
