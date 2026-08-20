@@ -174,7 +174,7 @@ The rule lives in `entry_hint` — not `description`, which the agent never sees
 **Primitive:** a qualification-router workflow with multiple terminal transfer statuses. One agent qualifies and filters; each target agent implements a different conversation and outreach intensity.
 
 1. Define the shared qualification fields on the source: fit, need, and buying timeline. Require them before either qualified branch.
-2. Create two mutually exclusive terminal statuses (shown below in stored shape — this is the `update_workflow_status` payload, **not** a `create_workflow` statuses array; at `create_workflow` these are just `{key, name}`, and `category`/`is_terminal`/`entry_hint`/`transfer_config` are applied in the follow-up per-status pass):
+2. Create two mutually exclusive terminal statuses. `create_workflow` statuses accept this full shape directly (only `transfer_config.target_workflow_id` must wait for the per-status pass when the target agent does not exist yet):
 
 ```json
 [
@@ -578,21 +578,22 @@ Resolve every `blocking_issue` and `clarification_question`, then show the summa
 
 ```
 create_workflow(name:"Qualifier", goal_type:"qualification",
-                statuses:[{key:"new",name:"New"}, {key:"engaged",name:"Engaged"}, …],
+                statuses:[{key:"new",name:"New",is_initial:true},
+                          {key:"engaged",name:"Engaged",entry_hint:"…"},
+                          {key:"qualified",name:"Qualified",category:"won",is_terminal:true,
+                           entry_hint:"…", required_field_keys:["fit","need","timeline"],
+                           transition_rules:{auto_evaluate:true, rule_groups:[…]}},
+                          {key:"unqualified",name:"Unqualified",category:"lost",is_terminal:true,entry_hint:"…"}],
                 fields:[{key:"fit",label:"Fit",type:"text",required:true,
                          extraction_hints:"…", metadata_key:"fit"}, …])
 ```
 
 The `fields` array must be **complete here** — `metadata_key`, `options`, `extraction_hints` and `validation` cannot be added later through MCP.
 
-**`create_workflow` statuses accept only `key` + `name`.** Nothing else. The first status in the array is the initial status (there is no `is_initial` at create time), and order is taken from array position (no `sort_order`). `is_initial`, `is_terminal`, `label`, `sort_order`, `entry_hint`, `category`, `transition_rules`, and `transfer_config` are all rejected here with `additionalProperties: false` — they belong to the `review_agent_system_plan` plan schema (which *does* take `is_initial`/`entry_hint`/`transfer_to_agent_ref`) or to the follow-up `update_workflow_status` call, not to `create_workflow`. Set terminals, categories, gates and hints in the per-status `update_workflow_status` pass below; note that `update_workflow_structure` statuses use `label`, not `name`.
+**`create_workflow` statuses carry the full stage config, and the array is the entire funnel.** Each status needs `key` plus `name` (or `label`); `is_initial`/`is_terminal`, `sort_order`, `entry_hint`, `category`, gates, `timeout_config`, `pause_bot` and the rest are all settable at create — configure everything except `transfer_config` targets that do not have real ids yet. The backend seeds a default pipeline on create and the tool prunes it back to your list, returning a `pipeline_reconciliation` report — **check it after every create** and resolve any leftover, missing, or warning entries before continuing. Plan-only key: `transfer_to_agent_ref` belongs to `review_agent_system_plan`, never to `create_workflow`. `update_workflow_structure` statuses still use `label` only.
 
 ```
 create_workflow(name:"Closer", goal_type:"appointment", …)     # note: needs an active meeting type to activate
-update_workflow_status(qualifier, "qualified", category:"won", is_terminal:true,
-                       entry_hint:"…", required_field_keys:["fit","need","timeline"],
-                       transition_rules:{auto_evaluate:true, rule_groups:[…]})
-update_workflow_status(qualifier, "unqualified", category:"lost", is_terminal:true, entry_hint:"…")
 create_workflow_tool(closer, …) → set_tool_stage_gate(closer, <id>, ["new"])
 update_workflow_config(qualifier, { config: { status_automations: [ … ] } })   # send the whole array
 configure_status_webhook(qualifier, "qualified", …)
