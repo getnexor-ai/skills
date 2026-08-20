@@ -1,6 +1,32 @@
-# Nexor Public Skills
+<p align="center">
+  <a href="#english">English</a> · <a href="#espanol">Español</a>
+</p>
 
-This repository is the public distribution point for Nexor's user-facing Agent Skills. The catalog is intentionally empty while the skills are rebuilt against the standard below.
+<a id="english"></a>
+
+# Nexor Skills
+
+This repository is the public distribution point for Nexor's user-facing Agent Skills. Every skill follows the publishing, safety, and quality standard documented below.
+
+## Installation
+
+Browse and install the available skills interactively:
+
+```bash
+npx skills add getnexor-ai/skills
+```
+
+Install a specific skill:
+
+```bash
+npx skills add getnexor-ai/skills@automation-architecture
+```
+
+Install every skill in the repository:
+
+```bash
+npx skills add getnexor-ai/skills --all
+```
 
 ## Standard
 
@@ -114,5 +140,148 @@ Before adding a skill to the catalog:
 4. Run `npm run check`.
 
 ## License
+
+[MIT](./LICENSE) © Nexor
+
+---
+
+<a id="espanol"></a>
+
+# Skills de Nexor
+
+Este repositorio es el punto de distribución público de las Agent Skills de Nexor orientadas a usuarios. Cada skill cumple con el estándar de publicación, seguridad y calidad documentado a continuación.
+
+## Instalación
+
+Explora e instala las skills disponibles de forma interactiva:
+
+```bash
+npx skills add getnexor-ai/skills
+```
+
+Instala una skill específica:
+
+```bash
+npx skills add getnexor-ai/skills@automation-architecture
+```
+
+Instala todas las skills del repositorio:
+
+```bash
+npx skills add getnexor-ai/skills --all
+```
+
+## Estándar
+
+Cada skill orientada a usuarios debe ser segura para su publicación, fácil de activar por un agente y útil fuera del entorno interno de Nexor.
+
+### Estructura de directorios
+
+```text
+skills/<nombre-de-la-skill>/
+├── SKILL.md                 # Obligatorio: metadatos de activación y flujo principal
+├── agents/
+│   └── openai.yaml          # Recomendado: metadatos de interfaz para usuarios
+├── scripts/                 # Opcional: automatización determinista o repetible
+├── references/              # Opcional: información detallada cargada solo cuando se necesita
+└── assets/                  # Opcional: plantillas y archivos utilizados en los resultados
+```
+
+Utiliza únicamente los directorios que la skill necesite. No añadas un README, registro de cambios, guía de instalación ni otra documentación de proceso dentro de una skill individual.
+
+### Nombres
+
+- Usa únicamente letras minúsculas, números y guiones en el nombre de la carpeta.
+- Usa el mismo valor para el nombre de la carpeta y el campo `name` del frontmatter.
+- Prefiere un nombre corto, orientado a la acción y de menos de 64 caracteres.
+
+### Formato obligatorio de `SKILL.md`
+
+```markdown
+---
+name: <nombre-de-la-skill>
+description: <Qué hace la skill>. Usar cuando <solicitudes, artefactos o situaciones específicas que deben activarla>.
+---
+
+# <Título legible de la skill>
+
+## Objetivo
+
+<Describe el resultado en una o dos frases.>
+
+## Flujo de trabajo
+
+1. <Comienza con la primera acción concreta.>
+2. <Describe las decisiones, verificaciones y el uso de herramientas en orden de ejecución.>
+3. <Verifica el resultado antes de entregarlo.>
+
+## Medidas de seguridad
+
+- <Define los límites de seguridad, privacidad, aprobación o alcance.>
+- <Indica cuándo el agente debe detenerse y consultar al usuario.>
+
+## Resultado
+
+- <Define el artefacto o la respuesta que el agente debe producir.>
+- <Define la evidencia o validación que debe incluir.>
+
+## Recursos
+
+- Lee [references/<archivo>.md](references/<archivo>.md) cuando <condición>.
+- Ejecuta `scripts/<script>` cuando <condición>.
+- Reutiliza `assets/<recurso>` cuando <condición>.
+```
+
+Elimina cualquier sección que no aporte valor. Añade secciones específicas del dominio únicamente cuando hagan que el flujo de trabajo sea más claro.
+
+### Reglas de redacción
+
+- Incluye toda la información de activación en el campo `description` del frontmatter; el cuerpo solo se carga después de que se activa la skill.
+- Usa únicamente `name` y `description` en el frontmatter de `SKILL.md`.
+- Escribe las instrucciones en imperativo y en orden de ejecución.
+- Asume que el agente es competente. Incluye únicamente conocimiento del dominio, restricciones y procedimientos reutilizables que no sean evidentes.
+- Mantén `SKILL.md` conciso y por debajo de 500 líneas. Mueve esquemas, políticas y ejemplos detallados a `references/`.
+- Enlaza cada recurso opcional directamente desde `SKILL.md` e indica exactamente cuándo debe utilizarse.
+- Mantén las referencias a un solo nivel de profundidad. Añade una tabla de contenido a los archivos de referencia de más de 100 líneas.
+- Coloca las operaciones deterministas, repetidas o propensas a errores en scripts y prueba esos scripts.
+- Define criterios de finalización observables. No termines con instrucciones ambiguas como «asegúrate de que funcione».
+
+### Reglas de seguridad para contenido público
+
+Una skill orientada a usuarios no debe contener:
+
+- Nombres de clientes o empresas privadas
+- Datos personales
+- Credenciales, secretos, tokens, URL privadas o valores de entorno
+- Estadísticas de producción o registros copiados de producción
+- Rutas de repositorios internos, identificadores propietarios o nombres de herramientas internas no documentadas
+- Instrucciones que modifiquen sistemas de producción sin un paso explícito de confirmación por parte del usuario
+- Material de terceros que Nexor no tenga permiso para redistribuir
+
+Sustituye los detalles internos por marcadores genéricos y explica el patrón transferible. Si eliminar o anonimizar un detalle hace que el flujo de trabajo sea inseguro o engañoso, no publiques la skill.
+
+### Lista de verificación para revisiones
+
+Antes de añadir una skill al catálogo:
+
+- [ ] El nombre de la carpeta coincide con el nombre del frontmatter.
+- [ ] La descripción indica tanto la capacidad como las condiciones concretas de activación.
+- [ ] El flujo de trabajo produce un resultado claro y visible para el usuario.
+- [ ] Las medidas de seguridad cubren acciones destructivas, efectos externos, privacidad y aprobaciones.
+- [ ] Se ha eliminado la información interna y sensible.
+- [ ] Los recursos opcionales son necesarios, están enlazados y se utilizan de forma condicional.
+- [ ] Cada script incluido se ha ejecutado correctamente en un caso representativo.
+- [ ] La skill se ha probado con al menos una solicitud realista de un usuario.
+- [ ] El resultado se entiende sin acceso a los sistemas privados de Nexor.
+- [ ] La validación del repositorio y la simulación de creación del paquete finalizan correctamente.
+
+## Añadir una skill
+
+1. Crea `skills/<nombre-de-la-skill>/SKILL.md` con el formato anterior.
+2. Añade únicamente los scripts, referencias, recursos y metadatos de interfaz que la skill necesite.
+3. Añade la skill al plugin correspondiente en [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json).
+4. Ejecuta `npm run check`.
+
+## Licencia
 
 [MIT](./LICENSE) © Nexor
