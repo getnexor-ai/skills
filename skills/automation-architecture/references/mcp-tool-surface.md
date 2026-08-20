@@ -103,7 +103,7 @@ Deleting an agent group is relationship-only: it removes the group and clears ea
 
 `create_workflow` accepts statuses and fields inline, but only a thin slice of each. The rich configuration is necessarily a second pass:
 
-1. `create_workflow` — name, goal_type, ordered statuses (`key` + `name`), and the **complete** `fields` array (see §4 — this is your only chance for most field properties).
+1. `create_workflow` — name, goal_type, ordered statuses (**`key` + `name` only — no other keys**; first in array is initial, order is array position), and the **complete** `fields` array (see §4 — this is your only chance for most field properties).
 2. `update_workflow_status` per status — `entry_hint`, `required_field_keys` / `requires_all_fields`, `transition_rules`, `category`, `is_terminal`, `timeout_config`, `pause_bot`. Fields already exist, so gates can reference them.
 3. Tools — `create_workflow_tool` / `configure_customer_api_tool`, then `set_workflow_tool_execution` or `set_tool_stage_gate`.
 4. `update_workflow_config` — `status_automations` and behavior flags. Tools must exist first: an automation references a tool **by name**.
@@ -153,7 +153,12 @@ Do not design a configuration that depends on these; the write will be rejected 
 
 ## 5. Naming traps
 
-- **`create_workflow` statuses use `name`. `update_workflow_structure` statuses use `label`.** Same concept, different key, in adjacent calls. Sending `label` to `create_workflow` fails `additionalProperties: false`.
+- **`create_workflow` statuses accept exactly two keys: `key` + `name`.** Everything else is rejected with `additionalProperties: false`. Do not send `label`, `is_initial`, `is_terminal`, `sort_order`, `entry_hint`, `category`, `transition_rules`, or `transfer_config` in `create_workflow` — that is the single most common build-time validation failure. Instead:
+  - **Initial status** — the first element of the `statuses` array. There is no `is_initial` field at create time.
+  - **Order** — array position. There is no `sort_order` at create time (see §4).
+  - **`is_terminal`, `category`, `entry_hint`, `transition_rules`, `transfer_config`, `pause_bot`, `timeout_config`** — set in the follow-up `update_workflow_status` pass (build order step 2), after the status exists.
+  - **`label`** — not a `create_workflow` key; `create_workflow` uses `name`. The *plan* schema of `review_agent_system_plan` is richer (it takes `is_initial`, `entry_hint`, `transfer_to_agent_ref` on statuses) — do not carry those plan keys into the `create_workflow` call.
+- **`update_workflow_structure` statuses use `label`, not `name`.** Same concept, different key from `create_workflow`, in adjacent calls. Sending `label` to `create_workflow` (or `name` to `update_workflow_structure`) fails `additionalProperties: false`.
 - **Tool `name` is immutable.** Renaming means `delete_workflow_tool` + recreate. `status_automations.tool` references it by name, so a rename silently breaks every automation pointing at it.
 - **`goal_type` is a fixed vocabulary:** `appointment`, `sale`, `qualification`, `information`, `payment_link`, `support`, `custom`, `quote`, `document_collection`. `custom` **does not schedule meetings** — pair it with `update_workflow({ goal_statement })`, which is what actually renders the objective into the prompt.
 - **Three unrelated things are called "paused."** Confusing them produces silent no-ops:
