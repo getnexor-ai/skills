@@ -66,9 +66,10 @@ Every write below has a paired read. A configuration is not done when the write 
 
 | Concern | Write | Read back with |
 |---|---|---|
-| Agent identity, language, timezone, agent_name | `update_workflow` | `get_workflow` |
+| Agent name, description, objective, pause state, group | `update_workflow` — accepts **only** `name`, `description`, `goal_statement`, `is_paused`, `master_workflow_id`; every call must carry at least one | `get_workflow` |
 | Agent rename | `update_workflow({ name })` | `get_workflow`, `list_workflows` |
 | Agent-group membership | `update_workflow({ master_workflow_id })`; `null` unassigns | `list_agent_groups`, `list_workflows` |
+| Agent language, timezone, channels | set at `create_workflow` — **not** parameters of `update_workflow` (see §4) | `get_workflow` |
 | Agent-group create/rename/delete | `create_agent_group`, `update_agent_group`, `delete_agent_group` | `list_agent_groups`, `list_workflows` |
 
 Deleting an agent group is relationship-only: it removes the group and clears each member's group assignment. It must never pause, archive, soft-delete, hard-delete, or reconfigure a member agent. Read back both groups and workflows and verify that every former member still exists with `master_workflow_id: null`.
@@ -118,7 +119,7 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 
 | Tool | Semantics | What you must do |
 |---|---|---|
-| `update_workflow` | Field-level merge | Pass only what changes |
+| `update_workflow` | Field-level merge, but accepts **only** `name`, `description`, `goal_statement`, `is_paused`, `master_workflow_id` | Pass only what changes, and **at least one** of those five — any other key is ignored and a call with none of them fails `INVALID_INPUT` |
 | `update_workflow.master_workflow_id` | Relationship replacement; UUID moves/assigns, `null` unassigns | Resolve the group with `list_agent_groups`; read back `list_workflows` |
 | `update_workflow_config` | **Top-level key merge**; nested values replaced wholesale | Read `get_workflow`, send the full array/object for any key you touch |
 | `update_workflow_config` with `replace: true` | **Destroys the entire config bag** | Effectively never use it |
@@ -143,6 +144,7 @@ Do not design a configuration that depends on these; the write will be rejected 
 - **`variable_refs`** — not a parameter of `update_workflow_status`. Statuses still gate correctly via `required_field_keys` / `requires_all_fields` / `transition_rules`; `variable_refs` only drives the dashboard's per-status hint of which fields matter. **Express every gate through `required_field_keys`, never by assuming `variable_refs` was set.**
 - **`futurology_queue`** — no MCP parameter. A "park and recontact later" bucket must be built from a non-terminal status plus a recontact rule or background job, or configured in the dashboard.
 - **`sort_order` on `update_workflow_status`** — set order at `create_workflow` / `update_workflow_structure` time.
+- **`update_workflow` mutates only five fields: `name`, `description`, `goal_statement`, `is_paused`, `master_workflow_id`.** `language`, `timezone`, `channels`, `agent_name`, and every other identity property are **not** parameters — they are fixed at `create_workflow`. Routing them through `update_workflow` sends unrecognized keys that are dropped, and if none of the five valid fields is also present the call fails `INVALID_INPUT: "Provide is_paused, name, description, goal_statement or master_workflow_id"`. Never call `update_workflow` with only a `workflow_id`; always include at least one of the five it accepts.
 - **Most workflow-field properties after creation.** `create_workflow.fields[]` accepts arbitrary properties, but `update_workflow_structure.fields[]` accepts **only** `key`, `label`, `type`, `required`, `sort_order`. So `metadata_key`, `intake_value_map`, `extraction_hints`, `options`, `validation`, and `description` are reachable **only in the initial `create_workflow` call**.
 
   **This is a Law 1 constraint with teeth:** the metadata → field bridge (`metadata_key`) and select-field `options` must be part of the variable ledger *before* you create the agent. Getting them wrong means recreating the agent or finishing in the dashboard. Write the complete `fields` array on the first call.
