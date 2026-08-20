@@ -66,10 +66,12 @@ Every write below has a paired read. A configuration is not done when the write 
 
 | Concern | Write | Read back with |
 |---|---|---|
-| Agent name, description, objective, pause state, group | `update_workflow` — accepts **only** `name`, `description`, `goal_statement`, `is_paused`, `master_workflow_id`; every call must carry at least one | `get_workflow` |
+| Agent name, description, objective, identity, group | `update_workflow` — accepts `name`, `description`, `goal_statement`, `language`, `timezone`, `region_style`, `agent_name`, `agent_role`, `company_name`, `begin_message`, `master_workflow_id`; every call must carry at least one | `get_workflow` |
+| Pause state | `set_workflow_active` — **not** an `update_workflow` parameter | `list_workflows` |
 | Agent rename | `update_workflow({ name })` | `get_workflow`, `list_workflows` |
 | Agent-group membership | `update_workflow({ master_workflow_id })`; `null` unassigns | `list_agent_groups`, `list_workflows` |
-| Agent language, timezone, channels | set at `create_workflow` — **not** parameters of `update_workflow` (see §4) | `get_workflow` |
+| Channels | channel-binding tools + `config.disabled_channels` — **not** parameters of `update_workflow` (see §4) | `get_workflow`, channel inventory tools |
+| Agent/workflow deletion | **Unavailable through MCP. Never attempt, suggest, or invent `delete_workflow`, `delete_agent`, or an equivalent operation** | N/A — an authorized human must use the supported product surface |
 | Agent-group create/rename/delete | `create_agent_group`, `update_agent_group`, `delete_agent_group` | `list_agent_groups`, `list_workflows` |
 
 Deleting an agent group is relationship-only: it removes the group and clears each member's group assignment. It must never pause, archive, soft-delete, hard-delete, or reconfigure a member agent. Read back both groups and workflows and verify that every former member still exists with `master_workflow_id: null`.
@@ -101,15 +103,22 @@ Deleting an agent group is relationship-only: it removes the group and clears ea
 
 ### Correct build order
 
-`create_workflow` accepts statuses and fields inline, but only a thin slice of each. The rich configuration is necessarily a second pass:
+`create_workflow` accepts the full funnel inline — statuses carry the complete stage config (`entry_hint`, `category`, `color`, `is_initial` / `is_terminal` and the other `is_*` flags, `transition_rules`, `requires_all_fields` / `required_field_keys`, `timeout_config`, `transfer_config`, `pause_bot`, `assignment_config`), so design the whole pipeline before the call instead of planning a second pass:
 
-1. `create_workflow` — name, goal_type, ordered statuses (**`key` + `name` only — no other keys**; first in array is initial, order is array position), and the **complete** `fields` array (see §4 — this is your only chance for most field properties).
-2. `update_workflow_status` per status — `entry_hint`, `required_field_keys` / `requires_all_fields`, `transition_rules`, `category`, `is_terminal`, `timeout_config`, `pause_bot`. Fields already exist, so gates can reference them.
-3. Tools — `create_workflow_tool` / `configure_customer_api_tool`, then `set_workflow_tool_execution` or `set_tool_stage_gate`.
-4. `update_workflow_config` — `status_automations` and behavior flags. Tools must exist first: an automation references a tool **by name**.
-5. Webhooks, rules, jobs, functions, knowledge bases.
-6. **Transfers last** — `update_workflow_status(..., transfer_config)` once every target agent has a real id.
-7. Read everything back, then `set_workflow_active`.
+1. `create_workflow` — name, goal_type, the ordered statuses with their full stage config (each status needs `key` plus `name` or its `label` alias; unknown status keys are forwarded to the backend as-is), and the **complete** `fields` array (see §4 — this is your only chance for most field properties). Statuses without flags derive them: first = initial, last = terminal.
+2. **Check the `pipeline_reconciliation` report in the response** (see "Seeded default pipelines" below) and resolve every leftover, missing key, and warning before configuring anything else.
+3. `update_workflow_status` — only for later edits, or for `transfer_config` targets that did not exist yet at create time.
+4. Tools — `create_workflow_tool` / `configure_customer_api_tool`, then `set_workflow_tool_execution` or `set_tool_stage_gate`.
+5. `update_workflow_config` — `status_automations` and behavior flags. Tools must exist first: an automation references a tool **by name**.
+6. Webhooks, rules, jobs, functions, knowledge bases.
+7. **Transfers last** — `update_workflow_status(..., transfer_config)` once every target agent has a real id.
+8. Read everything back, then `set_workflow_active`.
+
+### Seeded default pipelines
+
+The backend's create endpoint seeds a default funnel (New, Contacted, In conversation, plus system stages such as "Esperando respuesta humana") and **appends** your statuses to it. `create_workflow` reconciles this for you: after creating, it reads the workflow back, re-asserts your initial/terminal flags, deletes seeded statuses that are not in your list, and returns `{ workflow, pipeline_reconciliation }` where the report carries `requested_status_keys`, `seeded_statuses_removed`, `unrequested_statuses_remaining` (each with the backend's reason — e.g. `STATUS_HAS_LEADS` when the idempotency guard returned an existing agent), `missing_requested_statuses`, and `warnings`.
+
+Treat the report as part of the write: a build step is not done until `unrequested_statuses_remaining`, `missing_requested_statuses`, and `warnings` are all empty or explicitly resolved (`delete_workflow_status` after `get_pipeline_impact` for leftovers, `update_workflow_structure` for missing keys). Never leave seeded stages in a designed funnel — they are invisible to your gates, hints, and transfers, and leads routed into them go stale. Pass `prune_unrequested_statuses: false` only when you deliberately want to keep the defaults.
 
 ---
 
@@ -119,7 +128,7 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 
 | Tool | Semantics | What you must do |
 |---|---|---|
-| `update_workflow` | Field-level merge, but accepts **only** `name`, `description`, `goal_statement`, `is_paused`, `master_workflow_id` | Pass only what changes, and **at least one** of those five — any other key is ignored and a call with none of them fails `INVALID_INPUT` |
+| `update_workflow` | Field-level merge over name/description/`goal_statement`, the identity fields (`language`, `timezone`, `region_style`, `agent_name`, `agent_role`, `company_name`, `begin_message`) and `master_workflow_id` | Pass only what changes, and **at least one** accepted field — a call with none fails `INVALID_INPUT`. Pause state goes through `set_workflow_active`, channels through channel-binding tools |
 | `update_workflow.master_workflow_id` | Relationship replacement; UUID moves/assigns, `null` unassigns | Resolve the group with `list_agent_groups`; read back `list_workflows` |
 | `update_workflow_config` | **Top-level key merge**; nested values replaced wholesale | Read `get_workflow`, send the full array/object for any key you touch |
 | `update_workflow_config` with `replace: true` | **Destroys the entire config bag** | Effectively never use it |
@@ -133,7 +142,7 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 | `delete_workflow_tool` | Soft-disable by default; `hard: true` is permanent | Leave `hard` off |
 | `detach_knowledge_base` | Removes only the link | Never `delete_kb_document` to revoke one agent's access |
 
-`create_workflow` is idempotent server-side — a guarded duplicate returns the existing id rather than creating a second agent.
+`create_workflow` is idempotent server-side — a guarded duplicate returns the existing id rather than creating a second agent. Its post-create reconciliation never deletes a status holding leads (the delete is refused server-side and surfaces in `unrequested_statuses_remaining` instead), so a duplicate-return with live leads stays safe.
 
 ---
 
@@ -141,10 +150,11 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 
 Do not design a configuration that depends on these; the write will be rejected (`additionalProperties: false`) or the property simply has no tool.
 
+- **Agent/workflow deletion.** The agent has no deletion capability for agents or workflows. Never call, suggest, or fabricate `delete_workflow`, `delete_agent`, or any equivalent operation. If removal is requested, report that it requires an authorized human in the supported product surface; do not silently pause, archive, detach, or otherwise mutate the agent as a substitute.
 - **`variable_refs`** — not a parameter of `update_workflow_status`. Statuses still gate correctly via `required_field_keys` / `requires_all_fields` / `transition_rules`; `variable_refs` only drives the dashboard's per-status hint of which fields matter. **Express every gate through `required_field_keys`, never by assuming `variable_refs` was set.**
 - **`futurology_queue`** — no MCP parameter. A "park and recontact later" bucket must be built from a non-terminal status plus a recontact rule or background job, or configured in the dashboard.
 - **`sort_order` on `update_workflow_status`** — set order at `create_workflow` / `update_workflow_structure` time.
-- **`update_workflow` mutates only five fields: `name`, `description`, `goal_statement`, `is_paused`, `master_workflow_id`.** `language`, `timezone`, `channels`, `agent_name`, and every other identity property are **not** parameters — they are fixed at `create_workflow`. Routing them through `update_workflow` sends unrecognized keys that are dropped, and if none of the five valid fields is also present the call fails `INVALID_INPUT: "Provide is_paused, name, description, goal_statement or master_workflow_id"`. Never call `update_workflow` with only a `workflow_id`; always include at least one of the five it accepts.
+- **`channels` and pause state are not `update_workflow` parameters.** `update_workflow` covers name, description, `goal_statement`, the agent identity (`language`, `timezone`, `region_style`, `agent_name`, `agent_role`, `company_name`, `begin_message`) and `master_workflow_id` — but the channel mix lives in channel-binding tools plus `config.disabled_channels`, and pausing/activating is `set_workflow_active`. A call carrying only a `workflow_id` (or only unaccepted keys) fails `INVALID_INPUT`; always include at least one accepted field.
 - **Most workflow-field properties after creation.** `create_workflow.fields[]` accepts arbitrary properties, but `update_workflow_structure.fields[]` accepts **only** `key`, `label`, `type`, `required`, `sort_order`. So `metadata_key`, `intake_value_map`, `extraction_hints`, `options`, `validation`, and `description` are reachable **only in the initial `create_workflow` call**.
 
   **This is a Law 1 constraint with teeth:** the metadata → field bridge (`metadata_key`) and select-field `options` must be part of the variable ledger *before* you create the agent. Getting them wrong means recreating the agent or finishing in the dashboard. Write the complete `fields` array on the first call.
@@ -153,12 +163,8 @@ Do not design a configuration that depends on these; the write will be rejected 
 
 ## 5. Naming traps
 
-- **`create_workflow` statuses accept exactly two keys: `key` + `name`.** Everything else is rejected with `additionalProperties: false`. Do not send `label`, `is_initial`, `is_terminal`, `sort_order`, `entry_hint`, `category`, `transition_rules`, or `transfer_config` in `create_workflow` — that is the single most common build-time validation failure. Instead:
-  - **Initial status** — the first element of the `statuses` array. There is no `is_initial` field at create time.
-  - **Order** — array position. There is no `sort_order` at create time (see §4).
-  - **`is_terminal`, `category`, `entry_hint`, `transition_rules`, `transfer_config`, `pause_bot`, `timeout_config`** — set in the follow-up `update_workflow_status` pass (build order step 2), after the status exists.
-  - **`label`** — not a `create_workflow` key; `create_workflow` uses `name`. The *plan* schema of `review_agent_system_plan` is richer (it takes `is_initial`, `entry_hint`, `transfer_to_agent_ref` on statuses) — do not carry those plan keys into the `create_workflow` call.
-- **`update_workflow_structure` statuses use `label`, not `name`.** Same concept, different key from `create_workflow`, in adjacent calls. Sending `label` to `create_workflow` (or `name` to `update_workflow_structure`) fails `additionalProperties: false`.
+- **`create_workflow` statuses take the full stage config — use it.** Each status needs `key` plus `name` (or its `label` alias) and accepts `is_initial`, `is_terminal`, `sort_order`, `entry_hint`, `category`, `color`, `transition_rules`, `requires_all_fields` / `required_field_keys`, `timeout_config`, `transfer_config`, `pause_bot`, `assignment_config` and the other `is_*` flags; unknown keys are forwarded to the backend. Deferring stage config to a follow-up pass leaves a window where the funnel is wrong — configure at create and reserve `update_workflow_status` for edits and late-binding `transfer_config` targets. One plan-only key remains: `transfer_to_agent_ref` belongs to `review_agent_system_plan` and must be resolved to a real `target_workflow_id` before it appears in any `transfer_config`.
+- **`update_workflow_structure` statuses use `label` and accept only `key`, `label`, `is_initial`, `is_terminal`, `sort_order`.** `create_workflow` takes either `name` or `label`, but sending `name` — or any rich stage key — to `update_workflow_structure` fails `additionalProperties: false`; rich config on an existing status goes through `update_workflow_status`.
 - **Tool `name` is immutable.** Renaming means `delete_workflow_tool` + recreate. `status_automations.tool` references it by name, so a rename silently breaks every automation pointing at it.
 - **`goal_type` is a fixed vocabulary:** `appointment`, `sale`, `qualification`, `information`, `payment_link`, `support`, `custom`, `quote`, `document_collection`. `custom` **does not schedule meetings** — pair it with `update_workflow({ goal_statement })`, which is what actually renders the objective into the prompt.
 - **Three unrelated things are called "paused."** Confusing them produces silent no-ops:
@@ -176,6 +182,7 @@ Preview and dry-run tools exist for nearly every risky primitive. Using them is 
 | Check | Tool | What proves success |
 |---|---|---|
 | Whole-system preflight | `review_agent_system_plan` | `ready_for_signoff: true`, zero blocking issues |
+| Funnel exactness after create | `pipeline_reconciliation` in the `create_workflow` response, then `get_workflow` | Status keys are exactly the designed set; empty `unrequested_statuses_remaining`, `missing_requested_statuses`, and `warnings` |
 | Status deletion safety | `get_pipeline_impact` | Lead counts per status before deleting |
 | Cron correctness | `preview_scheduled_function_schedule` | The next N fire times in the right timezone |
 | Cohort size | `preview_scheduled_function_cohort` | The candidate list before anything runs |
