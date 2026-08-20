@@ -174,7 +174,7 @@ The rule lives in `entry_hint` — not `description`, which the agent never sees
 **Primitive:** a qualification-router workflow with multiple terminal transfer statuses. One agent qualifies and filters; each target agent implements a different conversation and outreach intensity.
 
 1. Define the shared qualification fields on the source: fit, need, and buying timeline. Require them before either qualified branch.
-2. Create two mutually exclusive terminal statuses:
+2. Create two mutually exclusive terminal statuses (shown below in stored shape — this is the `update_workflow_status` payload, **not** a `create_workflow` statuses array; at `create_workflow` these are just `{key, name}`, and `category`/`is_terminal`/`entry_hint`/`transfer_config` are applied in the follow-up per-status pass):
 
 ```json
 [
@@ -578,12 +578,14 @@ Resolve every `blocking_issue` and `clarification_question`, then show the summa
 
 ```
 create_workflow(name:"Qualifier", goal_type:"qualification",
-                statuses:[{key:"new",name:"New",is_initial:true}, …],
+                statuses:[{key:"new",name:"New"}, {key:"engaged",name:"Engaged"}, …],
                 fields:[{key:"fit",label:"Fit",type:"text",required:true,
                          extraction_hints:"…", metadata_key:"fit"}, …])
 ```
 
-The `fields` array must be **complete here** — `metadata_key`, `options`, `extraction_hints` and `validation` cannot be added later through MCP. Statuses use `name` in this call and `label` in `update_workflow_structure`.
+The `fields` array must be **complete here** — `metadata_key`, `options`, `extraction_hints` and `validation` cannot be added later through MCP.
+
+**`create_workflow` statuses accept only `key` + `name`.** Nothing else. The first status in the array is the initial status (there is no `is_initial` at create time), and order is taken from array position (no `sort_order`). `is_initial`, `is_terminal`, `label`, `sort_order`, `entry_hint`, `category`, `transition_rules`, and `transfer_config` are all rejected here with `additionalProperties: false` — they belong to the `review_agent_system_plan` plan schema (which *does* take `is_initial`/`entry_hint`/`transfer_to_agent_ref`) or to the follow-up `update_workflow_status` call, not to `create_workflow`. Set terminals, categories, gates and hints in the per-status `update_workflow_status` pass below; note that `update_workflow_structure` statuses use `label`, not `name`.
 
 ```
 create_workflow(name:"Closer", goal_type:"appointment", …)     # note: needs an active meeting type to activate

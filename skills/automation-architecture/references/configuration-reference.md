@@ -21,14 +21,14 @@ The client-facing configuration surface for each primitive. Field names here are
 
 ## 1. Statuses and agent routing
 
-Statuses belong to a workflow (an agent). Key config per status:
+Statuses belong to a workflow (an agent). The list below is the **stored/dashboard shape** of a status — not the `create_workflow` input. `create_workflow` statuses accept only `key` + `name` (first in array is initial, order is array position); every other property here is written afterward with `update_workflow_status`. See [mcp-tool-surface.md §5](mcp-tool-surface.md) for the exact create-time contract. Key config per status:
 
 - **Identity:** `key` (snake_case, unique per workflow), `label`, `description` (an internal note — see below), `color`, `sort_order`, `category` (`active` | `won` | `lost` | `paused` | `deferred`; terminal statuses use `won` / `lost`).
 - **Semantic flags:** `is_initial` (exactly one per workflow), `is_terminal` (at least one), stage-type markers `is_auto_contacted` / `is_auto_engaged` / `is_qualified` / `is_booking_target` (mutually exclusive — at most one stage each), `pause_bot` (the only per-status control that silences the agent), `futurology_queue` (a "park and re-contact later" bucket).
 - **Agent-facing:** `entry_hint`, `variable_refs[]`, `requires_all_fields`, `required_field_keys[]`.
 - **JSON blocks:** `transfer_config`, `timeout_config`, `transition_rules`, `assignment_config`.
 
-**Reachability:** `update_workflow_status` writes everything above **except `variable_refs`, `futurology_queue`, and `sort_order`** — those three are dashboard-only. Treat `variable_refs` as presentation, never as a gate: the enforcing gate is always `required_field_keys` / `requires_all_fields` / `transition_rules`. Set `sort_order` when creating statuses.
+**Reachability:** `update_workflow_status` writes everything above **except `variable_refs`, `futurology_queue`, and `sort_order`** — those three are dashboard-only. Treat `variable_refs` as presentation, never as a gate: the enforcing gate is always `required_field_keys` / `requires_all_fields` / `transition_rules`. `sort_order` is not writable through MCP at all — it is fixed by the array position of statuses in the `create_workflow` / `update_workflow_structure` call, and `create_workflow` rejects an explicit `sort_order` key.
 
 ### How the agent decides where a lead goes
 
@@ -478,7 +478,7 @@ There is **no weekly frequency cap** — no "email at most N per week" knob exis
 
 ### Qualification router: fan out by outreach intensity
 
-Use one qualification agent to collect a common set of fields, then create one terminal status per materially different follow-up motion. The source status selects the target; each target workflow owns its prompt, tools, channels, and cadence.
+Use one qualification agent to collect a common set of fields, then create one terminal status per materially different follow-up motion. The source status selects the target; each target workflow owns its prompt, tools, channels, and cadence. The JSON below is the **stored/`update_workflow_status` shape**, not a `create_workflow` statuses array — at `create_workflow` each status is only `{key, name}`; `category`, `is_terminal`, `entry_hint`, and `transfer_config` are written in the per-status pass afterward.
 
 ```json
 [
