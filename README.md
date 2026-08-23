@@ -28,6 +28,12 @@ Install every skill in the repository:
 npx skills add getnexor-ai/skills --all
 ```
 
+## Available skills
+
+- **automation-architecture** — Map a plain-language Nexor requirement to an exact configuration (agents, statuses, fields/metadata, webhooks, functions, jobs, cadence, transfers) and build it through Nexor MCP tools.
+- **lead-communication-history** — Read what was actually said, sent, and received for one lead across phone-call transcripts, email, SMS, and WhatsApp.
+- **whatsapp-management** — Manage a customer's WhatsApp end to end through Nexor: connect a number, check account health/risk, create/review/organize templates, run cadence pools, set the business profile, tune response timing, assign to an agent, and send messages.
+
 ## Standard
 
 Every user-facing skill must be safe to publish, easy for an agent to trigger, and useful outside Nexor's internal environment.
