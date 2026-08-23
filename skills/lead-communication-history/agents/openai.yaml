@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lead Communication History"
+  short_description: "Read a lead’s messages, emails, and calls"
+  default_prompt: "Use $lead-communication-history to review this lead’s communication history and answer from the actual content."

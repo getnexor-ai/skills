@@ -46,7 +46,11 @@ Nexor's MCP tools. When Nexor's tool behavior and this doc disagree, the tool wi
 ### Approval lifecycle
 - Status flow is Meta-owned: `PENDING → APPROVED | REJECTED`; an approved template can
   later be `PAUSED` or `DISABLED` if quality drops.
-- Approval is asynchronous (minutes to ~48h). Poll `check_whatsapp_template_approvals`.
+- Approval is asynchronous and Meta-owned. Canonical expectation to quote the customer:
+  **usually a few minutes to about an hour, occasionally up to 24–48h** — never promise a
+  precise time. For the customer-facing "are they approved / how long?" question use
+  `get_whatsapp_template_approval_status` (summary + real per-template pending age); use
+  `check_whatsapp_template_approvals` when you want the full raw list.
 - There is **no in-place edit**. To change a rejected (or any) template, submit a
   revision under a **new name**; delete the old one after if desired.
 

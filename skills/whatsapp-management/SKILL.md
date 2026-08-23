@@ -27,6 +27,7 @@ quality rating, the 24-hour window) that rarely change and are easy to get wrong
 | Business profile | `get_whatsapp_business_profile`, `set_whatsapp_display_name`, `set_whatsapp_profile_photo` |
 | Health & risk | `get_whatsapp_health` |
 | Response timing (debounce) | `get_whatsapp_response_timing`, `set_whatsapp_response_timing` |
+| "Are my templates approved / how long?" | `get_whatsapp_template_approval_status` |
 | Templates — read | `list_whatsapp_templates`, `get_whatsapp_template`, `check_whatsapp_template_approvals`, `sync_whatsapp_templates` |
 | Templates — create | `review_whatsapp_template_drafts` → `create_whatsapp_templates_batch` (preferred); `create_whatsapp_template` (single) |
 | Templates — organize | `set_whatsapp_template_purpose`, `delete_whatsapp_template` |
@@ -156,6 +157,38 @@ pool wiring so the user sees the whole picture.
 - Meta has **no in-place edit**. To fix a REJECTED template, revise it under a **new
   name** and resubmit (optionally `delete_whatsapp_template` the old one after a
   preview).
+
+## "Have my templates been approved?" / "How long until approval?"
+
+In Nexor a bare **"template" always means a WhatsApp template**, so treat any
+unqualified template question (approved? how long? list? edit?) as WhatsApp. Templates
+also only exist for a **fully connected WhatsApp number** — they are meaningless without
+one.
+
+This is the most common template question — answer it with **one tool, from data**, never a guessed time.
+
+1. Call `get_whatsapp_template_approval_status` (it refreshes from Meta first, so the
+   answer is current). If it returns `no_whatsapp: true`, there is no connected WhatsApp
+   number yet — tell the customer to connect one first (`connect_whatsapp_number`), do
+   NOT say they have zero templates. Otherwise it returns a summary, not a dump: `counts` by status,
+   `all_approved` / `none`, each `pending[]` template with `pending_hours` (how long it
+   has *actually* been waiting), `longest_pending_hours`, `some_pending_over_24h`, each
+   `rejected[]` with its Meta `reason`, and `review_window`.
+2. Answer from those facts, in the customer's language:
+   - `all_approved: true` → "All N templates are approved ✅."
+   - Some pending → "X of N approved; Y still under Meta review." Give the **canonical
+     window, never a made-up ETA**: *approval is asynchronous and decided by Meta —
+     usually a few minutes to about an hour, occasionally up to 24–48h.* If you want to
+     be concrete, cite the real wait from `pending_hours` ("the oldest has been pending
+     ~3h").
+   - `some_pending_over_24h: true` → say it is taking **longer than usual**; if a
+     template passes ~48h, the fix is to revise it under a new name and resubmit (Meta
+     has no in-place edit).
+   - Any `rejected[]` → name them with their `reason`, and offer to revise under a new
+     name.
+   - `none: true` → there are no templates yet; offer to draft some.
+3. Do **not** promise an exact approval time and do **not** poll in a tight loop — one
+   call per ask. Approval is genuinely Meta-owned and variable.
 
 ## Sending
 
