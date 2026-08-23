@@ -6,16 +6,17 @@
   },
   "metadata": {
     "description": "Publicly shareable Agent Skills from the Nexor team",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "plugins": [
     {
       "name": "agent-playbooks",
-      "description": "Building conversational-agent capabilities on Nexor: mapping customer use cases to an exact configuration of agents, statuses, webhooks, functions, jobs, and transfers.",
+      "description": "Building conversational-agent capabilities on Nexor: mapping customer use cases to an exact configuration of agents, statuses, webhooks, functions, jobs, and transfers, plus full WhatsApp management (connect numbers, health/risk, templates, cadence pools).",
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/automation-architecture"
+        "./skills/automation-architecture",
+        "./skills/whatsapp-management"
       ]
     }
   ]
