@@ -71,14 +71,18 @@ Every write below has a paired read. A configuration is not done when the write 
 | Agent rename | `update_workflow({ name })` | `get_workflow`, `list_workflows` |
 | Agent-group membership | `update_workflow({ master_workflow_id })`; `null` unassigns | `list_agent_groups`, `list_workflows` |
 | Channels | channel-binding tools + `config.disabled_channels` — **not** parameters of `update_workflow` (see §4) | `get_workflow`, channel inventory tools |
-| Agent/workflow deletion | **Unavailable through MCP. Never attempt, suggest, or invent `delete_workflow`, `delete_agent`, or an equivalent operation** | N/A — an authorized human must use the supported product surface |
+| Agent/workflow deletion | `delete_workflow` — first call without `confirm:true` for a write-free preview; repeat with `confirm:true` after explicit approval. Archives the agent and releases its channels. **Refuses with HTTP 409 `AGENT_HAS_LEADS` (with distinct `lead_count`) when the agent still holds active leads in its pipeline** (at least one active `workflow_run`) | `list_workflows` (the agent is gone/archived) |
 | Agent-group create/rename/delete | `create_agent_group`, `update_agent_group`, `delete_agent_group` | `list_agent_groups`, `list_workflows` |
+| Reversible lead archive | `delete_lead` / `bulk_archive_leads` under `leads:write`; clarify ambiguous delete requests before choosing archive | `get_lead` / `get_leads` |
+| Permanent lead deletion | `hard_delete_lead` / `bulk_hard_delete_leads` under separately granted `leads:delete`; first call without `confirm:true` for a write-free exact-id preview, repeat with `confirm:true` only after explicit approval | Success response plus the backend forensic audit |
 
 Deleting an agent group is relationship-only: it removes the group and clears each member's group assignment. It must never pause, archive, soft-delete, hard-delete, or reconfigure a member agent. Read back both groups and workflows and verify that every former member still exists with `master_workflow_id: null`.
+
 | Base prompt | `set_workflow_prompt` | `get_workflow`, `get_workflow_prompt_history` |
 | Per-channel prompt | `set_channel_prompt` | `get_workflow` |
 | Create the agent + skeleton statuses + fields | `create_workflow` | `get_workflow` |
 | Add/edit statuses & fields (upsert, never deletes) | `update_workflow_structure` | `get_workflow` |
+| Reorder every status after the protected semantic head | `reorder_workflow_statuses` with the complete persisted tail | `get_workflow` |
 | **Per-status gates, hints, transfers, timeouts, pause** | `update_workflow_status` | `get_workflow` |
 | Delete a status | `delete_workflow_status` (after `get_pipeline_impact`) | `get_workflow` |
 | Workflow-scoped HTTP tool | `create_workflow_tool` / `update_workflow_tool` | `list_workflow_tools` |
@@ -133,11 +137,12 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 | `update_workflow_config` | **Top-level key merge**; nested values replaced wholesale | Read `get_workflow`, send the full array/object for any key you touch |
 | `update_workflow_config` with `replace: true` | **Destroys the entire config bag** | Effectively never use it |
 | `update_workflow_structure` | Upsert by key; **never deletes** | Removing a status needs `delete_workflow_status` |
+| `reorder_workflow_statuses` | Atomic complete-tail replacement; the first three semantic stages stay fixed | Read `get_workflow`, submit every persisted tail key exactly once, then read back and compare |
 | `update_workflow_status` | Field-level merge, but `null` **clears** the block | Pass `null` only to intentionally clear |
 | `set_workflow_prompt` | **Full overwrite** of the global prompt | `get_workflow` first, edit, send whole |
 | `set_workflow_cadence` | Whole-document PUT for `blocks`; `dayConfig` keys omitted are **preserved** | `get_workflow_cadence` first, send the full edited document |
 | `set_workflow_qualification` | Merge by natural key; `replace: true` deletes and replaces | Default to merge |
-| `set_workflow_voice` | Key-level merge | Pass only changed keys |
+| `set_workflow_voice` | Switches the voice AND/OR merges tuning keys | To change the voice pass **one** of `gender` (`male`/`female`), `voice_id`, or `voice_name` — the server resolves and writes the effective voice, and returns `resolved_voice.preview_url` to share. Tuning knobs (`voiceSpeed`, …) go in the `voice` object |
 | `delete_workflow_status` | **Destructive.** Fails with `STATUS_HAS_LEADS` unless `migration_target` is given | Always `get_pipeline_impact` first |
 | `delete_workflow_tool` | Soft-disable by default; `hard: true` is permanent | Leave `hard` off |
 | `detach_knowledge_base` | Removes only the link | Never `delete_kb_document` to revoke one agent's access |
@@ -150,11 +155,11 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 
 Do not design a configuration that depends on these; the write will be rejected (`additionalProperties: false`) or the property simply has no tool.
 
-- **Agent/workflow deletion.** The agent has no deletion capability for agents or workflows. Never call, suggest, or fabricate `delete_workflow`, `delete_agent`, or any equivalent operation. If removal is requested, report that it requires an authorized human in the supported product surface; do not silently pause, archive, detach, or otherwise mutate the agent as a substitute.
+- **Deleting an agent that still has active pipeline leads.** Agent deletion itself *is* available through the two-step `delete_workflow` contract: preview without `confirm:true`, obtain explicit approval for that exact agent, then repeat with `confirm:true`. The one thing MCP cannot force is deleting an agent whose pipeline still holds active leads (at least one active `workflow_run`) — the backend refuses with HTTP 409 `AGENT_HAS_LEADS` (with distinct `lead_count`), exactly as the dashboard Delete button is blocked. When this happens, do not dead-end: report the count and offer to move those leads to another agent, archive them reversibly, or permanently erase exact leads only under the separate `leads:delete` scope and its own preview-then-confirm flow. **Never** archive, delete, or status-change leads as a silent way to empty the pipeline. Agent-group deletion (`delete_agent_group`) stays relationship-only — never delete, pause, or mutate a member agent as a substitute.
 - **`variable_refs`** — not a parameter of `update_workflow_status`. Statuses still gate correctly via `required_field_keys` / `requires_all_fields` / `transition_rules`; `variable_refs` only drives the dashboard's per-status hint of which fields matter. **Express every gate through `required_field_keys`, never by assuming `variable_refs` was set.**
 - **`futurology_queue`** — no MCP parameter. A "park and recontact later" bucket must be built from a non-terminal status plus a recontact rule or background job, or configured in the dashboard.
-- **`sort_order` on `update_workflow_status`** — set order at `create_workflow` / `update_workflow_structure` time.
-- **`channels` and pause state are not `update_workflow` parameters.** `update_workflow` covers name, description, `goal_statement`, the agent identity (`language`, `timezone`, `region_style`, `agent_name`, `agent_role`, `company_name`, `begin_message`) and `master_workflow_id` — but the channel mix lives in channel-binding tools plus `config.disabled_channels`, and pausing/activating is `set_workflow_active`. A call carrying only a `workflow_id` (or only unaccepted keys) fails `INVALID_INPUT`; always include at least one accepted field.
+- **Raw `sort_order` edits on an existing pipeline.** Set initial order through `create_workflow`; later order changes go through `reorder_workflow_statuses`, which protects the semantic head and rewrites the complete tail contiguously.
+- **`channels` and pause state are not `update_workflow` parameters.** `update_workflow` covers name, description, `goal_statement`, the agent identity (`language`, `timezone`, `region_style`, `agent_name`, `agent_role`, `company_name`, `begin_message`) and `master_workflow_id` — but the channel mix lives in the channel-binding tools (`assign_whatsapp_to_workflow`, `config.email_sender_id`, `assign_number_to_workflow`, `set_number_sms`) plus `config.disabled_channels`, and pausing/activating is `set_workflow_active`. A call carrying only a `workflow_id` (or only unaccepted keys) fails `INVALID_INPUT`; always include at least one accepted field. SMS is not provisioned like the others: it is activated per agent with `set_number_sms({ number_id, enabled: true, sms_workflow_id })` on a phone number the account already has (a Twilio-carrier number; Telnyx cannot carry SMS), so it needs no buy-a-number step when an active Twilio number already exists.
 - **Most workflow-field properties after creation.** `create_workflow.fields[]` accepts arbitrary properties, but `update_workflow_structure.fields[]` accepts **only** `key`, `label`, `type`, `required`, `sort_order`. So `metadata_key`, `intake_value_map`, `extraction_hints`, `options`, `validation`, and `description` are reachable **only in the initial `create_workflow` call**.
 
   **This is a Law 1 constraint with teeth:** the metadata → field bridge (`metadata_key`) and select-field `options` must be part of the variable ledger *before* you create the agent. Getting them wrong means recreating the agent or finishing in the dashboard. Write the complete `fields` array on the first call.
@@ -164,7 +169,7 @@ Do not design a configuration that depends on these; the write will be rejected 
 ## 5. Naming traps
 
 - **`create_workflow` statuses take the full stage config — use it.** Each status needs `key` plus `name` (or its `label` alias) and accepts `is_initial`, `is_terminal`, `sort_order`, `entry_hint`, `category`, `color`, `transition_rules`, `requires_all_fields` / `required_field_keys`, `timeout_config`, `transfer_config`, `pause_bot`, `assignment_config` and the other `is_*` flags; unknown keys are forwarded to the backend. Deferring stage config to a follow-up pass leaves a window where the funnel is wrong — configure at create and reserve `update_workflow_status` for edits and late-binding `transfer_config` targets. One plan-only key remains: `transfer_to_agent_ref` belongs to `review_agent_system_plan` and must be resolved to a real `target_workflow_id` before it appears in any `transfer_config`.
-- **`update_workflow_structure` statuses use `label` and accept only `key`, `label`, `is_initial`, `is_terminal`, `sort_order`.** `create_workflow` takes either `name` or `label`, but sending `name` — or any rich stage key — to `update_workflow_structure` fails `additionalProperties: false`; rich config on an existing status goes through `update_workflow_status`.
+- **`update_workflow_structure` statuses use `label` and accept only `key`, `label`, `is_initial`, `is_terminal`, `sort_order`.** `create_workflow` takes either `name` or `label`, but sending `name` — or any rich stage key — to `update_workflow_structure` fails `additionalProperties: false`; rich config on an existing status goes through `update_workflow_status`, and whole-pipeline ordering goes through `reorder_workflow_statuses`.
 - **Tool `name` is immutable.** Renaming means `delete_workflow_tool` + recreate. `status_automations.tool` references it by name, so a rename silently breaks every automation pointing at it.
 - **`goal_type` is a fixed vocabulary:** `appointment`, `sale`, `qualification`, `information`, `payment_link`, `support`, `custom`, `quote`, `document_collection`. `custom` **does not schedule meetings** — pair it with `update_workflow({ goal_statement })`, which is what actually renders the objective into the prompt.
 - **Three unrelated things are called "paused."** Confusing them produces silent no-ops:
@@ -183,6 +188,7 @@ Preview and dry-run tools exist for nearly every risky primitive. Using them is 
 |---|---|---|
 | Whole-system preflight | `review_agent_system_plan` | `ready_for_signoff: true`, zero blocking issues |
 | Funnel exactness after create | `pipeline_reconciliation` in the `create_workflow` response, then `get_workflow` | Status keys are exactly the designed set; empty `unrequested_statuses_remaining`, `missing_requested_statuses`, and `warnings` |
+| Existing pipeline order | `get_workflow` before and after `reorder_workflow_statuses` | Protected semantic head remains at 0–2; complete persisted tail exactly matches the submitted keys at 3 onward |
 | Status deletion safety | `get_pipeline_impact` | Lead counts per status before deleting |
 | Cron correctness | `preview_scheduled_function_schedule` | The next N fire times in the right timezone |
 | Cohort size | `preview_scheduled_function_cohort` | The candidate list before anything runs |

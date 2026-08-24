@@ -28,7 +28,19 @@ Statuses belong to a workflow (an agent). The list below is the **stored/dashboa
 - **Agent-facing:** `entry_hint`, `variable_refs[]`, `requires_all_fields`, `required_field_keys[]`.
 - **JSON blocks:** `transfer_config`, `timeout_config`, `transition_rules`, `assignment_config`.
 
-**Reachability:** `update_workflow_status` writes everything above **except `variable_refs`, `futurology_queue`, and `sort_order`** — those three are dashboard-only there. Treat `variable_refs` as presentation, never as a gate: the enforcing gate is always `required_field_keys` / `requires_all_fields` / `transition_rules`. `sort_order` is settable at `create_workflow` / `update_workflow_structure` time (defaulting to array position) but not on `update_workflow_status`.
+**Reachability:** `update_workflow_status` writes everything above **except `variable_refs`, `futurology_queue`, and `sort_order`** — those three are dashboard-only there. Treat `variable_refs` as presentation, never as a gate: the enforcing gate is always `required_field_keys` / `requires_all_fields` / `transition_rules`. Set initial positions through the ordered `create_workflow` statuses. Reorder an existing pipeline only with `reorder_workflow_statuses`, never by patching numeric `sort_order` values through a mixed structure edit.
+
+### Pipeline order
+
+Every persisted pipeline starts with three protected semantic stages at `sort_order` 0–2: Lead created (`core_new`, normally key `new`), Contacted (`core_contacted`), and Engaged (`core_engaged`). Labels are editable, so identify this head from its semantic role/system kind, not displayed copy. Only stages after this head are reorderable.
+
+Use `reorder_workflow_statuses({ workflow_id, ordered_status_keys })` as a complete-tail replacement:
+
+1. Read `get_workflow` and collect every persisted status after Engaged.
+2. Submit every collected key exactly once in the desired order. Do not include the protected head or raw position numbers.
+3. Read `get_workflow` again and verify the head remains 0–2 and the submitted tail occupies 3 onward exactly.
+
+An omission, duplicate, unknown key, changed pipeline membership, or malformed core fails without mutation. The dashboard may group On hold and terminal outcomes independently of raw order, so a reorder changes order within the UI's grouping rules rather than moving a status across every visible section. A synthetic Discarded column is not persisted and must never be submitted.
 
 ### How the agent decides where a lead goes
 
@@ -346,9 +358,9 @@ Use an event cloud function instead of an agent tool when a field/variable or le
 
 Triggers: `lead.created`, `lead.updated`, `lead.status_changed`, `lead.assigned`, `lead.tag_added`, `lead.unsubscribed`, `information.collected`, `information.updated`, `message.received`, `message.sent`, `call.completed`, `handoff.requested`, `conversion.detected`, `meeting.created`, `meeting.rescheduled`, `meeting.completed`, `meeting.no_show`, `task.created`, `task.executed`, `workflow.run_started`, `workflow.status_entered`, `workflow.status_left`, `workflow.run_completed`.
 
-Runtime: `axios` and `fetch` are pre-injected globals (no imports); `env.KEY` reads Environment Variables; `ctx` carries the event and lead — update-type events also include the changed keys (`ctx.changed_fields`) for guarding. Limits: 5-minute deadline, 20 outbound requests per run.
+Runtime: `axios` and `fetch` are pre-injected globals (no imports); `env.KEY` reads Environment Variables; `ctx` carries the event and current lead at `ctx.lead`, also exposed as `lead` — update-type events include the changed keys (`ctx.changed_fields`) for guarding. Read that native lead directly; never GET or list `/api/public/leads` to reconstruct the event record. Limits: 5-minute deadline, 20 outbound requests per run.
 
-**Effects are narrow:** `updateLead(patch)` and `updateMetadata(patch)` only, targeting the event's own lead (`updateLead({ status: "..." })` performs a status transition). Effects are buffered and applied only after the code finishes without throwing; cap 100.
+For the event's own lead, use `updateLead(patch)` and `updateMetadata(patch)`. The buffered `effects` / `ctx.effects` surface also supports `assignToWorkflow(leadId, workflowId, reason?)`, `setLeadStatus(leadId, statusKey, workflowId?)`, `tagLead(leadId, tags)`, `assignLead(leadId, userId)`, `upsertLead(lead)`, `updateLead(leadId, patch)`, `updateMetadata(leadId, patch)`, `deactivateWorkflowRun(leadId)`, and `updateEnvironmentVariable(key, value)`. Effects apply only after the code finishes without throwing; cap 100.
 
 **No chaining:** effect-driven updates do not re-emit events (recursion guard). A design that needs "event → change → another event reacts" belongs in a scheduled function.
 
@@ -358,11 +370,25 @@ Manual test runs preview effects without applying them — but `axios`/`fetch` c
 
 ## 7. Scheduled functions (cron-driven JS)
 
-A cohort sweep — and the most flexible *inbound* integration path: query the leads table, call any external API with `axios`, and create or edit leads with custom metadata, all in editable JavaScript. Config: five-field `cron_expression` + IANA `timezone`, a `lookup_config` query selecting the cohort, `max_leads_per_cycle` (1–500), `code`, `is_active`.
+A cohort sweep — and the most flexible *inbound* integration path: resolve a trusted lead cohort, call any external API with `axios`, and create or edit leads with custom metadata, all in editable JavaScript. Config: five-field `cron_expression` + IANA `timezone`, a `lookup_config` query selecting the cohort, `max_leads_per_cycle` (1–500), `code`, `is_active`.
 
-Lookup grammar: Supabase-style chained filters over lead columns (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`, `contains`) plus `order()` and `limit()`; relative times via `daysAgo(n)` / `hoursAgo(n)` (recomputed each run). Filterable columns include contact fields, `source`, `external_id`, `created_at`, `last_contacted_at`, `last_response_at`, message counters, boolean flags, and `tags contains`. A cohort preview shows match count and sample rows before you activate.
+The dashboard's Supabase-style chain is an authoring representation. Persist the equivalent trusted JSON spec in `lookup_config`, for example:
 
-Context: `ctx.leads[]` (each with `id`, contact fields, `tags`, `metadata`, `status`, `workflow_id`), `ctx.effects`, plus the same `axios`/`fetch`/`env`/`helpers` surface — and the same per-run outbound request limit — as cloud functions. Every effect names its lead — there is no "the" lead. Batch external calls (e.g. the leads API array form) instead of one request per lead.
+```json
+{
+  "leads": {
+    "query": {
+      "filters": [{ "column": "source", "op": "eq", "value": "referral" }],
+      "order": [{ "column": "created_at", "ascending": true }],
+      "limit": 500
+    }
+  }
+}
+```
+
+Direct query operators are `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`, `in`, and `contains`; relative times use `{ "rel": { "unit": "days"|"hours", "value": n } }` and are recomputed each run. Filterable lead columns include contact fields, `source`, `external_id`, `created_at`, `last_contacted_at`, `last_response_at`, message counters, boolean flags, and `tags`. Leads do not store `workflow_id` or `current_status_id`; those belong to `workflow_runs`. For the current membership cohort, add `{ "column": "workflow_runs.workflow_id", "op": "eq", "value": "<workflow-id>" }` and `{ "column": "workflow_runs.is_active", "op": "eq", "value": true }` to the same query filters array. A status filter uses `workflow_runs.current_status_id`. The runner compiles all `workflow_runs.*` filters into one tenant-scoped relational `EXISTS`, so they match the same run. The `workflow_id` returned on each resolved `ctx.leads` row is a derived convenience projection from its active run, not a leads-table column. Always preview the cohort before activation.
+
+Context: `ctx.leads[]` (each with `id`, contact fields, `tags`, `metadata`, `status`, `workflow_id`), `ctx.effects`, plus the same `axios`/`fetch`/`env`/`helpers` surface — and the same per-run outbound request limit — as cloud functions. The trusted lookup is the lead-read boundary: function code consumes or further filters this array and never GETs/lists `/api/public/leads` to resolve the same cohort. Every effect names its lead — there is no "the" lead. Batch calls to external systems instead of issuing one request per lead when their API supports it.
 
 Effects API: `upsertLead({email?, phone?, firstName?, lastName?, source?, metadata?})`, `updateLead(leadId, patch)`, `updateMetadata(leadId, patch)`, `assignLead(leadId, userId)`, `assignToWorkflow(leadId, workflowId, reason?)`, `tagLead(leadId, tags)`, `setLeadStatus(leadId, statusKey, workflowId?)`, `deactivateWorkflowRun(leadId)`. Buffered, applied after successful completion, cap 2000.
 
@@ -370,10 +396,10 @@ Chaining differs from cloud functions: `assignLead` re-emits events (a sweep can
 
 **Syncing leads in from an external system** — two working shapes:
 
-1. **Preferred:** fetch from the external API with `axios`, then call `POST /api/public/leads` (API key stored in an Environment Variable) for each record. One request does upsert + metadata merge + `workflow_id` enrollment + first contact.
+1. **Atomic import exception:** fetch from the external API with `axios`, then call `POST /api/public/leads` (API key stored in an Environment Variable) for each record only when the same run must perform upsert + metadata merge + `workflow_id` enrollment + first contact. This direct API path exists because the effect-based upsert does not return the new id; it is not a lead-read path.
 2. **Two-phase effects:** run A calls `upsertLead` with a marker (`source: "crm_sync"`); run B's lookup filters on that marker and calls `assignToWorkflow` / `setLeadStatus` on the now-existing leads. Needed because effects return nothing — a function cannot learn a new lead's id in the same run.
 
-Manual runs always dry-run: candidates found + effects previewed. Read that list before activating anything that messages people. (`assignToWorkflow` starts the target agent's cadence.)
+Manual runs apply buffered effects just like a scheduled tick and require explicit operator confirmation. Preview the cohort separately and read that list before running or activating anything that messages people. (`assignToWorkflow` starts the target agent's cadence.)
 
 ---
 
@@ -572,7 +598,7 @@ Never ask the customer to recall configuration that Nexor can read. In the Maste
 | Call number | `list_phone_numbers.numbers[]` | `is_active: true` and `provision_status !== "released"` | `assign_number_to_workflow({ number_id, workflow_id })` |
 | SMS channel | same `list_phone_numbers` row | call-number conditions plus `sms_enabled: true` | `set_number_sms({ number_id, enabled: true, sms_workflow_id })` |
 
-Preserve the returned ids; phone and SMS are two capabilities of the same inventory row, not two unrelated catalogs. Preserve current `workflow_id` / `sms_workflow_id` / WhatsApp `workflow_id` as well. Email senders may be shared by multiple agents. WhatsApp has one direct `workflow_id`, call has one `workflow_id`, and SMS has one independent `sms_workflow_id`; call and SMS on the same physical number may point to different agents. Selecting an exclusive capability already assigned elsewhere is a reassignment.
+Preserve the returned ids; phone and SMS are two capabilities of the same inventory row, not two unrelated catalogs. SMS is not a resource you provision — it rides on a phone number the account already has: as long as an active Twilio number exists, SMS is activated per agent by enabling it on that number and pointing its SMS route at the agent's workflow with `set_number_sms({ number_id, enabled: true, sms_workflow_id })`. SMS requires a Twilio-carrier number (Telnyx numbers cannot carry SMS); there is no country restriction. Preserve current `workflow_id` / `sms_workflow_id` / WhatsApp `workflow_id` as well. Email senders may be shared by multiple agents. WhatsApp has one direct `workflow_id`, call has one `workflow_id`, and SMS has one independent `sms_workflow_id`; call and SMS on the same physical number may point to different agents. Selecting an exclusive capability already assigned elsewhere is a reassignment.
 
 The Master Editor's `inspectAccountChannels` response normalizes those reads:
 
@@ -595,7 +621,7 @@ Selection rules are deterministic:
 
 Before mutation, run an account-wide allocation check. No WhatsApp, call, or SMS capability may have two intended direct owners. If a selected exclusive resource already has an owner, the confirmation summary must state its label/id, capability, old agent, new agent, and that inbound routing plus the old agent's direct outbound availability will change. Generic approval does not authorize that disruption. Immediately before each exclusive assignment write, repeat inventory and compare the live owner with the approved old owner. If it changed, abort that write and obtain new targeted approval against the current owner and impact.
 
-When “configure another” is selected, suspend the build until a new real id exists. WhatsApp uses the chat connector and then repeats inventory. Email setup completes on the platform's Email integration surface and resumes only when `can_send: true`. Call/SMS setup completes on the Phone integration surface; provisioning is billable and requires its own action. After the operator returns, repeat inventory and selection—never keep a placeholder id in the manifest.
+When “configure another” is selected, suspend the build until a new real id exists. WhatsApp uses the chat connector and then repeats inventory. Email setup completes on the platform's Email integration surface and resumes only when `can_send: true`. Call setup — buying or provisioning a phone number for voice — completes on the Phone integration surface; that provisioning is billable and requires its own action. SMS is different: it is not a resource you provision. As long as the account already has an active Twilio number, SMS is activated per agent via `set_number_sms` (enabling SMS on that number and binding its `sms_workflow_id`) — no separate billable action. Only when the account has no number at all does buying one enter the SMS conversation. After the operator returns, repeat inventory and selection—never keep a placeholder id in the manifest.
 
 After workflow creation, apply each selected id and synchronize `config.disabled_channels` plus `first_contact_channel`. Repeat the inventory read and `get_workflow` for every new agent and every displaced existing agent. Disable a lost capability on the displaced agent or assign its separately confirmed replacement. Relationship cleanup uses these exact calls: `assign_whatsapp_to_workflow({ number_id })` omits the optional `workflow_id` to unbind; `update_workflow_config({ workflow_id, config: { email_sender_id: null } })` explicitly clears email (omitting the key in a merge preserves the stale sender); `set_number_sms({ number_id, enabled: true })` omits the optional `sms_workflow_id` when SMS should stay enabled but unowned; `assign_number_to_workflow({ number_id })` omits the optional `workflow_id` and makes call routing client-scoped, so use it only when that account-wide impact was explicitly approved. Completion requires exact binding and config equality for every requested channel. Enabling a channel in cadence without assigning a usable sender/number does not satisfy the manifest.
 

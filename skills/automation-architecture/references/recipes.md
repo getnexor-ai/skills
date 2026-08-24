@@ -23,6 +23,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 17. [“Partway through, the agent should change its tone / start selling / hand over”](#17-partway-through-the-agent-should-change-its-tone--start-selling--hand-over)
 18. [“Create two agents using the account’s existing channels”](#18-create-two-agents-using-the-accounts-existing-channels)
 19. [Build a two-agent system end to end, from brief to live](#19-build-a-two-agent-system-end-to-end-from-brief-to-live)
+20. [“Change the agent's call voice — make it male / female / a specific voice”](#20-change-the-agents-call-voice--make-it-male--female--a-specific-voice)
 
 ---
 
@@ -524,6 +525,8 @@ The same physical phone id is valid here because call and SMS have independent o
 
 **Rejected rungs:** asking “do you have WhatsApp?” ignores account data; assigning the same exclusive capability to both agents causes a reconciliation loop; treating SMS and call as one owner discards supported routing; generic build approval does not authorize breaking an existing agent; a placeholder “new number” is not a binding.
 
+**Note on SMS above:** SMS is never provisioned here. Because the account already has an active Twilio number, SMS is activated per agent on that existing number with `set_number_sms({ number_id, enabled: true, sms_workflow_id })` — no buy-a-number step (a Twilio-carrier number is required; there is no country restriction).
+
 ---
 
 ## 19. Build a two-agent system end to end, from brief to live
@@ -621,3 +624,42 @@ set_workflow_active(qualifier, true)
 **Activate the target before the source.** The transfer path does not check whether the target is paused: it deactivates the source run and creates the target run either way. If the target is still paused at that moment, the lead has been handed off into an agent that will not speak. Ordering activation target-first removes the window entirely.
 
 **Rejected rungs:** creating both agents then wiring transfers from memory (creation order never satisfies a connection — read back); building three agents for qualify/engage/book (recipe 12); activating during the build; naming the boundary `future_qualified` (soft terminal — the transfer silently never fires).
+
+---
+
+## 20. “Change the agent's call voice — make it male / female / a specific voice”
+
+**Primitive:** agent config only — the voice the call agent speaks with. One tool does the whole job: `set_workflow_voice`. It resolves the request against the client's voice catalog and writes the *effective* voice where the call runtime reads it — you do not edit `ai_config` by hand.
+
+The one trap this recipe exists to kill: **gender is not a free-text prompt line, and it is not `ai_config.style.gender` alone.** Telling the agent "usa una voz de hombre" in the prompt, or flipping only the grammatical gender, does **not** change the voice the lead hears. The lead keeps hearing the old voice. You must select a real catalog voice.
+
+**When the ask names a gender ("que sea voz de hombre" / "a female voice"):**
+
+```
+set_workflow_voice(workflow_id, gender:"male")
+```
+
+The server picks a male voice in the workflow's language, sets it as the effective voice, and aligns the grammatical gender to match. The response returns `resolved_voice` — read back `resolved_voice.name` and share `resolved_voice.preview_url` (a playable .mp3) so the user can hear it before trusting it.
+
+**When the ask names a specific voice, or you want to let the user choose:**
+
+```
+list_workflow_voices(workflow_id)                     # each voice has a preview_url sample
+set_workflow_voice(workflow_id, voice_id:"<id from the list>")
+# or, to match by name:
+set_workflow_voice(workflow_id, voice_name:"Kailey", gender:"female")
+```
+
+Always pass the `voice_id` (not the catalog row `id`) when you have it. Combine `voice_name` + `gender` when a name is ambiguous.
+
+**Tuning (speed, temperature, volume) is a separate concern** — those go in the `voice` object and do not select a voice:
+
+```
+set_workflow_voice(workflow_id, voice:{ voiceSpeed:1.1 })
+```
+
+You can switch and tune in one call: `set_workflow_voice(workflow_id, gender:"male", voice:{ voiceSpeed:1.05 })`.
+
+**Failure modes to surface, not swallow:** an unknown `voice_id` or a gender with no match in the workflow's language returns `INVALID_VOICE` with `available_voices`. Do not silently fall back — tell the user the catalog has no such voice for their language, list what is available (with preview URLs), and offer to add one via the add-language flow.
+
+**Rejected rungs:** a prompt line asking the agent to "sound male" (speech, not the TTS voice); setting only the grammatical gender field (changes es/pt self-reference wording, never the voice); hand-writing `ai_config.voice.voice_id` (the call runtime reads top-level `ai_config.voice_id`, so a nested-only write is ignored — the exact bug this tool now prevents).
