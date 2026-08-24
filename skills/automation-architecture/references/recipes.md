@@ -1,4 +1,4 @@
-# Recipes: customer ask → exact configuration
+# Recipes: your ask → exact configuration
 
 Worked mappings. Start from the closest one, keep the shape, swap the domain values. Field names and semantics are defined in [configuration-reference.md](configuration-reference.md).
 
@@ -40,7 +40,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 }
 ```
 
-The payload already carries the full lead (including metadata) and the from/to statuses — the receiver rarely needs a follow-up call. For Slack/email-style notifications, point the URL at the customer's alerting endpoint or a relay they own.
+The payload already carries the full lead (including metadata) and the from/to statuses — the receiver rarely needs a follow-up call. For Slack/email-style notifications, point the URL at your alerting endpoint or a relay you own.
 
 Variants: filter `to_status.category equals won` for "any win"; add `workflow_id` to scope to one agent; subscribe `meeting.created` / `meeting.no_show` for booking notifications. Keep status-filtered subscriptions on status events only (an absent filter field passes).
 
@@ -83,7 +83,7 @@ Variants: filter `to_status.category equals won` for "any win"; add `workflow_id
 **Primitive:** scheduled function calling the public leads API. ("Syncing information into the system" is usually just the API; the scheduled function is the cron wrapper when the external system can't push.)
 
 - If the external system **can push** (webhooks, Zapier, forms): skip the function entirely — point it at `POST /api/public/leads` with an API key, or at a branded inbound hook URL if it can't set headers. Done.
-- If Nexor must **pull**, create a scheduled function (e.g. `0 2 * * *`, customer's timezone):
+- If Nexor must **pull**, create a scheduled function (e.g. `0 2 * * *`, your timezone):
 
 ```js
 const { data } = await axios.get("https://crm.example.com/api/contacts?updated_since=yesterday", {
@@ -112,7 +112,7 @@ The API upserts (email → phone match), shallow-merges metadata, and enrolls in
 
 **Primitive:** metadata at intake + `metadata_key` bridges. Whenever the customer says "the agent should know/use custom information about the lead," configure the intake through metadata.
 
-1. The sending system includes the data in the lead's `metadata` object on `POST /api/public/leads` (or via the inbound hook's `field_mapping`). The root is an object, while its customer-defined values may use any JSON shape:
+1. The sending system includes the data in the lead's `metadata` object on `POST /api/public/leads` (or via the inbound hook's `field_mapping`). The root is an object, while the values you define may use any JSON shape:
 
 ```json
 {
@@ -165,7 +165,7 @@ The platform routes the lead the moment `save_field` stores the income — the b
 
 The rule lives in `entry_hint` — not `description`, which the agent never sees.
 
-**Rejected rungs:** a cloud function on `information.collected` could compare numbers in code, but auto-evaluated statuses give the same determinism while keeping the routing visible and editable by operators — the code earns nothing.
+**Rejected rungs:** a cloud function on `information.collected` could compare numbers in code, but auto-evaluated statuses give the same determinism while keeping the routing visible and editable by you — the code earns nothing.
 
 ---
 
@@ -313,9 +313,9 @@ It fires on workflow entry, ahead of the first message, with no model decision a
 
 **Primitives:** required intake fields → `qualified` status → deterministic status automation for round robin → `assignment_ready` after success → stage-gated availability and booking tools. The client's endpoint owns round robin; state transitions invoke and verify assignment without depending on the model, while the agent retains only the tools that require conversational choices.
 
-First check who owns the rotation: if "round robin" just means distributing leads among the customer's own team members *in Nexor*, native `assignment_config: { "mode": "round_robin", "agent_ids": [] }` on the qualified stage does it with zero integration (reference §1) — stop there. This recipe is for rotation owned by the client's CRM or endpoint.
+First check who owns the rotation: if "round robin" just means distributing leads among your own team members *in Nexor*, native `assignment_config: { "mode": "round_robin", "agent_ids": [] }` on the qualified stage does it with zero integration (reference §1) — stop there. This recipe is for rotation owned by the client's CRM or endpoint.
 
-1. Define every qualification input as a required workflow field. Configure `qualified` with `requires_all_fields: true` and `required_field_keys` containing those keys. Its `entry_hint` must state the customer's actual qualification rule.
+1. Define every qualification input as a required workflow field. Configure `qualified` with `requires_all_fields: true` and `required_field_keys` containing those keys. Its `entry_hint` must state your actual qualification rule.
 2. Register the client's assignment endpoint as the backing tool `assign_sales_rep`. Pass stable facts such as `lead_id`, territory, and product. Require a response containing `rep_id`, `rep_name`, and `assignment_id`; never ask the model to choose among representatives.
 3. Invoke it deterministically when the lead enters `qualified`:
 
@@ -391,7 +391,7 @@ claim that assignment or booking succeeded.
 1. Put the discard rule in the status's `entry_hint` (e.g. `unqualified` — "Lead confirmed there is no budget / they are outside the service area — place the lead here."), with `variable_refs` + `requires_all_fields` when the rule depends on collected field values.
 2. Configure `category: "lost"` and `is_terminal: true`. Entering the status stops all proactive outbound (cadence and jobs skip the lead) and the run cannot be reactivated. The agent still replies briefly and kindly if the lead writes in — built-in lost-lead behavior: no selling, no booking offers. Add `pause_bot` only if the customer wants total silence, including to inbound messages. Encode the disqualifying condition in `transition_rules.rule_groups` with `auto_evaluate: true` when field values fully determine it.
 3. Do not confuse the neighbors: `pause_bot` is a hold (agent stops responding while a human reviews; the run stays live) and `futurology_queue` is a deferral (park now, recontact later — recipe 10). Only the terminal `lost` status discards. Avoid status keys starting with `future_` (or `contact_later` / `colder`) for a hard discard — those are soft terminals and recontact keeps running for them.
-4. If the customer's system must also know, attach a filtered webhook (recipe 1) or status automation (recipe 2) to the discard status.
+4. If your system must also know, attach a filtered webhook (recipe 1) or status automation (recipe 2) to the discard status.
 
 **Rejected rungs:** a background job that "deactivates unqualified leads" re-derives what the status already enforces; a prompt line saying "don't message unqualified leads" is speech, not structure — nothing stops the cadence.
 

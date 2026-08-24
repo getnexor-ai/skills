@@ -1,11 +1,11 @@
 ---
 name: whatsapp-management
-description: "Manage a Nexor customer's WhatsApp end to end through Nexor MCP tools: connect a number (hosted setup link), check account health and risk (quality rating, messaging limits, sending status), create/review/submit and organize message templates, run cadence template pools, set the business display name and photo, tune inbound response timing, assign a number to an agent, and send messages. Use whenever a customer wants to connect WhatsApp, is asked about WhatsApp risk/quality/limits, wants to create or fix a template, or wants to change anything about how their WhatsApp behaves. Everything is done through Nexor — the customer never touches Meta or the provider directly."
+description: "Manage your WhatsApp end to end through Nexor MCP tools: connect a number (hosted setup link), check account health and risk (quality rating, messaging limits, sending status), create/review/submit and organize message templates, run cadence template pools, set the business display name and photo, tune inbound response timing, assign a number to an agent, and send messages. Use whenever you want to connect WhatsApp, are asked about WhatsApp risk/quality/limits, want to create or fix a template, or want to change anything about how your WhatsApp behaves. Everything is done through Nexor — you never touch Meta or the provider directly."
 ---
 
 # WhatsApp management (through Nexor)
 
-Nexor is the single front door for everything WhatsApp. The customer never calls Meta
+Nexor is the single front door for everything WhatsApp. You never call Meta
 or the underlying provider directly — even connecting a number is a hosted setup link
 Nexor generates. Every tool below is tenant-scoped automatically from the API key;
 never accept or pass a `client_id` from the user.
@@ -19,7 +19,7 @@ quality rating, the 24-hour window) that rarely change and are easy to get wrong
 | Job | Tools |
 |-----|-------|
 | See numbers | `list_whatsapp_numbers` |
-| Connect a number | `connect_whatsapp_number` → returns a hosted setup link the customer opens |
+| Connect a number | `connect_whatsapp_number` → returns a hosted setup link you open |
 | Fix a broken number | `reconcile_whatsapp_number`; if it needs fresh Meta auth, `connect_whatsapp_number` again |
 | Assign to an agent | `assign_whatsapp_to_workflow` |
 | Turn a number off / remove | `deactivate_whatsapp_number` (reversible); `disconnect_whatsapp_number` (admin, destructive) |
@@ -125,7 +125,7 @@ The chat has full parity with the dashboard template builder — use it.
 
 ### 5. Preflight → sign-off → submit
 
-1. `review_whatsapp_template_drafts` — read-only preflight. The operator sees each draft
+1. `review_whatsapp_template_drafts` — read-only preflight. You see each draft
    rendered as a WhatsApp preview (the review card) with its validity and issues. Show
    the returned `normalized_templates`, errors and warnings; revise and repeat until
    `all_valid=true` (you get a `review_id`).
@@ -152,7 +152,7 @@ submitting, for the `workflow_id` from step 1:
 
 Meta approval is asynchronous — poll `check_whatsapp_template_approvals` until each is
 APPROVED or REJECTED. Close by stating the agent, the templates, their purposes, and the
-pool wiring so the user sees the whole picture.
+pool wiring so you see the whole picture.
 
 - Meta has **no in-place edit**. To fix a REJECTED template, revise it under a **new
   name** and resubmit (optionally `delete_whatsapp_template` the old one after a
