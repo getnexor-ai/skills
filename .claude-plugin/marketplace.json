@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "agent-playbooks",
-      "description": "Build and operate conversational-agent capabilities on Nexor: map customer use cases to exact agent configuration, manage WhatsApp, and review a lead's communication history across calls, email, SMS, and WhatsApp.",
+      "description": "Build and operate conversational-agent capabilities on Nexor: map your use cases to exact agent configuration, manage WhatsApp, and review a lead's communication history across calls, email, SMS, and WhatsApp.",
       "source": "./",
       "strict": false,
       "skills": [

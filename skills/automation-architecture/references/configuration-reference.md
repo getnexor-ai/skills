@@ -1,6 +1,6 @@
 # Configuration reference
 
-The client-facing configuration surface for each primitive. Field names here are the real ones exposed through the product UI and public API.
+The configuration surface you work with for each primitive. Field names here are the real ones exposed through the product UI and public API.
 
 ## Contents
 
@@ -80,7 +80,7 @@ Full `transition_rules` shape:
 
 A terminal status with `category: "lost"` is the discard mechanism. The disqualification rule is configured visibly in the agent (`entry_hint` + `transition_rules`) and processed internally during the conversation. `lost` means **"stop initiating," not "stop responding"**: all proactive outbound halts (cadence and jobs skip the lead as `status_lost`), the run cannot be reactivated — but if the lead writes in, the agent still replies briefly and kindly under built-in lost-lead behavior (no selling, no booking offers). Choose by intent:
 
-- **Discard** ("stop pursuing"): terminal + `category: "lost"`. Attach a status automation or filtered webhook when the customer's system must also be told. Add `pause_bot` only if the customer wants total silence, including to inbound messages.
+- **Discard** ("stop pursuing"): terminal + `category: "lost"`. Attach a status automation or filtered webhook when your system must also be told. Add `pause_bot` only if the customer wants total silence, including to inbound messages.
 - **Hold** ("stop responding while a human reviews"): `pause_bot` — the run stays live, the agent just goes quiet while the lead sits there.
 - **Defer** ("not now, recontact later"): `futurology_queue` parking bucket + a re-activation mechanism (§8).
 
@@ -92,7 +92,7 @@ Status keys starting with `future_`, or exactly `contact_later` / `colder`, are 
 
 ### Native member assignment (`assignment_config`)
 
-`{ "mode": "round_robin" | "least_loaded", "agent_ids": ["<user_uuid>"], "restrict_booking_to_assignee": false }` on at most one stage: entering it assigns a human team member (empty `agent_ids` = the whole team; eligible roles are owner/admin/human agent). It does not pause the AI. When "assign sales reps round-robin" means rotating among the customer's own team members *in Nexor*, this native config is the entire answer — no endpoint, no tool. Reach for a client endpoint only when an external system owns the rotation (see the round-robin recipe).
+`{ "mode": "round_robin" | "least_loaded", "agent_ids": ["<user_uuid>"], "restrict_booking_to_assignee": false }` on at most one stage: entering it assigns a human team member (empty `agent_ids` = the whole team; eligible roles are owner/admin/human agent). It does not pause the AI. When "assign sales reps round-robin" means rotating among your own team members *in Nexor*, this native config is the entire answer — no endpoint, no tool. Reach for a client endpoint only when an external system owns the rotation (see the round-robin recipe).
 
 ---
 
@@ -279,7 +279,7 @@ Auth: `X-API-Key` header. Accepts one object or an array of up to 1000.
 
 Fields: `first_name` (required), `last_name`, `email`, `phone`, `company`, `title`, `source`, `external_id`, `metadata`, `tags`, `workflow_id`, `campaign_id`, consent flags, and first-contact controls.
 
-`metadata` is the default way to give an agent custom information about a lead. Its root is a JSON object with arbitrary customer-defined keys; each value may be any valid JSON value, including a string, number, boolean, null, array, or nested object. Nexor injects the complete metadata object into the runtime agent prompt across channels, preserving nested values. Pure context needs no workflow field, knowledge base, tool, or function. Add a workflow field with `metadata_key` only when the agent must ask for, validate, normalize, or gate on that value. Metadata updates shallow-merge top-level keys: untouched top-level keys remain, but replacing part of a nested object requires resending that complete nested object.
+`metadata` is the default way to give an agent custom information about a lead. Its root is a JSON object with arbitrary keys you define; each value may be any valid JSON value, including a string, number, boolean, null, array, or nested object. Nexor injects the complete metadata object into the runtime agent prompt across channels, preserving nested values. Pure context needs no workflow field, knowledge base, tool, or function. Add a workflow field with `metadata_key` only when the agent must ask for, validate, normalize, or gate on that value. Metadata updates shallow-merge top-level keys: untouched top-level keys remain, but replacing part of a nested object requires resending that complete nested object.
 
 - **Upsert:** matches by email first, then normalized phone. On match: non-empty fields overwrite, metadata shallow-merges, response says `existed: true`. Duplicate entries within one batch resolve to one lead.
 - **Enrollment:** pass `workflow_id` to enroll the lead and start the agent's cadence/first contact immediately. Controls: `skip_first_message: true` (enroll silently), `force_first_channel: "call"|"whatsapp"|"email"|"sms"`, or `force_first_message: { channel, content }` (send a literal opener instead of the agent's own). If the workflow is paused, enrollment waits for unpause. Without `workflow_id` the lead is created inert.
@@ -287,7 +287,7 @@ Fields: `first_name` (required), `last_name`, `email`, `phone`, `company`, `titl
 
 ### Inbound lead webhook (no API key)
 
-`POST /hooks/<unguessable-token>` — a branded intake URL the customer pastes into a form builder, Zapier, or their CRM. Config per hook: `name`, `field_mapping`, `workflow_id`, `deduplicate`, `is_active`. Use when the sending system can't set headers.
+`POST /hooks/<unguessable-token>` — a branded intake URL you paste into a form builder, Zapier, or your CRM. Config per hook: `name`, `field_mapping`, `workflow_id`, `deduplicate`, `is_active`. Use when the sending system can't set headers.
 
 ---
 
@@ -306,7 +306,7 @@ Both are more reliable than instructing the agent to notice the status and call 
 
 ### Outbound webhooks
 
-Subscription config: `name`, `url` (HTTPS only), `events[]`, `filters[]` (up to 10, ANDed: `{ field, operator, value }`), `auth_type` (`none` | `header` | `basic` | `custom_headers`), `payload_template` (optional), `include_full_lead`, `signing_secret` (HMAC-SHA256, shown once), `retry_enabled` / `max_retries`. The dashboard's per-status "Attach webhook" (pipeline column menu) creates exactly this: a client-level subscription auto-filtered on `workflow_id` + `to_status.key`.
+Subscription config: `name`, `url` (HTTPS only), `events[]`, `filters[]` (up to 10, ANDed: `{ field, operator, value }`), `auth_type` (`none` | `header` | `basic` | `custom_headers`), `payload_template` (optional), `include_full_lead`, `signing_secret` (HMAC-SHA256, shown once), `retry_enabled` / `max_retries`. The dashboard's per-status "Attach webhook" (pipeline column menu) creates exactly this: an account-level subscription auto-filtered on `workflow_id` + `to_status.key`.
 
 Events: `workflow_run.status_changed`, `meeting.created`, `meeting.updated`, `meeting.cancelled`, `meeting.completed`, `meeting.no_show`, `meeting.confirmed`, `outreach.failed`.
 
@@ -393,7 +393,7 @@ Manual runs always dry-run: candidates found + effects previewed. Read that list
 
 ## 9. Workflow transfers
 
-The agent-to-agent handoff. Configured as `transfer_config: { "target_workflow_id": "<uuid>", "copy_fields": true }` on a **terminal** status (transfers auto-fire from the terminal-status path; a non-terminal status will not reliably trigger one). The target must belong to the same client and differ from the source workflow. `copy_fields` is accepted by the API but currently inert — the platform always snapshots all source fields into the transfer chain regardless. Cohort-scale transfers use the background-job `workflow_transfer` action; one-off transfers are available via API.
+The agent-to-agent handoff. Configured as `transfer_config: { "target_workflow_id": "<uuid>", "copy_fields": true }` on a **terminal** status (transfers auto-fire from the terminal-status path; a non-terminal status will not reliably trigger one). The target must belong to your account and differ from the source workflow. `copy_fields` is accepted by the API but currently inert — the platform always snapshots all source fields into the transfer chain regardless. Cohort-scale transfers use the background-job `workflow_transfer` action; one-off transfers are available via API.
 
 What the platform does on transfer:
 
@@ -524,12 +524,12 @@ Transfers start fresh runs and may produce an immediate contextual handoff befor
 
 Knowledge bases have two distinct scopes:
 
-- `knowledge_bases` is the client/account catalog. A row can exist once and be reused by several agents.
+- `knowledge_bases` is your account catalog. A row can exist once and be reused by several agents.
 - `workflow_knowledge_bases` is the assignment layer. A runtime agent can retrieve only from the KBs linked to that workflow, ordered by `priority`.
 
 Use the public MCP tools in this order:
 
-1. `list_knowledge_bases({})` inventories every non-archived KB owned by the authenticated client. This establishes what is available, not what any agent can use.
+1. `list_knowledge_bases({})` inventories every non-archived KB owned by your account. This establishes what is available, not what any agent can use.
 2. Build an exact desired set for each agent using real KB ids. Do not attach every account KB by default. If relevance is ambiguous, resolve it before changing assignments.
 3. `list_knowledge_bases({ "workflow_id": "<agent-id>" })` reads the current per-agent assignments and priority order.
 4. Call `attach_knowledge_base({ "workflow_id": "<agent-id>", "knowledge_base_id": "<kb-id>", "priority": 1 })` for each missing link. Omit `priority` only when appending is intentional.

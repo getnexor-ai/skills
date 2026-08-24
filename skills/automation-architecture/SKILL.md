@@ -7,7 +7,7 @@ description: Map plain-language Nexor requirements to exact configuration and bu
 
 ## Goal
 
-Turn a customer use case into an exact, minimal Nexor configuration: named primitives with concrete field values, connected end to end. The deliverable is a configuration, not a recommendation.
+Turn your use case into an exact, minimal Nexor configuration: named primitives with concrete field values, connected end to end. The deliverable is a configuration, not a recommendation.
 
 ## The three laws of decomposition
 
@@ -55,7 +55,7 @@ Same goal, same persona, same tool set, same cadence — only more known about t
 
 ## The primitives
 
-Everything a customer asks for lands on one or more of these:
+Everything you ask for lands on one or more of these:
 
 | # | Primitive | Trigger | Code? | Scope |
 |---|-----------|---------|-------|-------|
@@ -76,7 +76,7 @@ Everything a customer asks for lands on one or more of these:
 
 ## Decision ladder — config beats code
 
-Config is operator-visible, editable in the UI, and cannot crash; code is invisible to operators and yours to maintain forever. Walk the ladder top-down and stop at the first rung that expresses the requirement.
+Config is visible to you, editable in the UI, and cannot crash; code is invisible to you and yours to maintain forever. Walk the ladder top-down and stop at the first rung that expresses the requirement.
 
 1. **Can native conversation config express it?** A status, intake field, prompt rule, or deterministic branch → agent config. "Ask for X and branch on it" is statuses + fields, not code. Laws 1 and 2 have usually already placed most of this rung.
 2. **Is it a standard lifecycle nudge?** Booking confirmations, pre-meeting reminders, host notifications, stale-lead recontact → rules. Configure and stop.
@@ -98,7 +98,7 @@ Treat “sync this information” as incomplete until the direction is explicit.
 For data moving **into Nexor**, classify every incoming key before mapping it:
 
 - Put lead identity and delivery coordinates in the standard lead columns: `first_name`, `last_name`, `email`, and `phone`. Update them through the normal lead create/update contract, never through metadata. Metadata does not change the address or number Nexor uses to contact the lead.
-- Put every other reusable customer fact the agent should know in `lead.metadata`. Create/upsert with a `metadata` object or shallow-merge it with `PATCH`/`PUT /api/public/leads/:id`; use `PATCH /api/public/leads/metadata` for bulk merges. The complete metadata object is loaded into the next agent execution, so a value written now is available on the next turn/run without copying it into prompt prose.
+- Put every other reusable fact you want the agent to know in `lead.metadata`. Create/upsert with a `metadata` object or shallow-merge it with `PATCH`/`PUT /api/public/leads/:id`; use `PATCH /api/public/leads/metadata` for bulk merges. The complete metadata object is loaded into the next agent execution, so a value written now is available on the next turn/run without copying it into prompt prose.
 - Add a workflow field with `metadata_key` only when the same value must pre-fill an intake question or participate in a field-only status gate. Metadata remains the source of inbound context; the field is the structural bridge.
 
 For data moving **out of Nexor**, choose the outbound trigger from the table below. Metadata may be the source value included in a payload, but writing metadata is not an outbound sync mechanism and sends nothing by itself.
@@ -129,7 +129,7 @@ Read the workflow-tool and stage-gate contract in [references/configuration-refe
 
 ## Workflow
 
-1. Restate the ask as **trigger → condition → action**, resolve sync direction as **into Nexor / out of Nexor** before choosing a surface, classify its timing as **in-turn / event / batch / inbound**, and separate what the agent must **ask** (intake fields), what the customer's systems **send** (standard lead identity columns versus metadata), and what must **happen** (tool call or automation).
+1. Restate the ask as **trigger → condition → action**, resolve sync direction as **into Nexor / out of Nexor** before choosing a surface, classify its timing as **in-turn / event / batch / inbound**, and separate what the agent must **ask** (intake fields), what your systems **send** (standard lead identity columns versus metadata), and what must **happen** (tool call or automation).
 2. Apply the three laws to draft the skeleton before choosing any primitive: list every fact the design needs as a named variable with its store and its readers (Law 1); list every in-agent stage as a status key with its entry criterion and gate (Law 2); list every identity switch as a boundary status with its shape, target agent, and — for a pause boundary — its executor (Law 3). Anything you cannot place in one of those three lists is not designed yet; place it before continuing.
 3. Call `describe_agent_configuration` before proposing any non-trivial or multi-agent build, and read current state with `list_workflows` / `get_workflow` / `list_workflow_tools` / `list_webhooks`. The platform ships its own required process and surface map; follow it rather than a remembered one.
 4. Walk the ladder. Note every rung you skip and why — that reasoning is part of the deliverable.
@@ -147,7 +147,7 @@ Read the workflow-tool and stage-gate contract in [references/configuration-refe
 
 ## Facts that decide designs
 
-These are the semantics customers (and naive designs) most often get wrong:
+These are the semantics you (and naive designs) most often get wrong:
 
 - **`create_workflow`'s statuses are the entire funnel — the backend seeds defaults, and seeded stages must not survive.** The create endpoint seeds a default pipeline (New, Contacted, In conversation, system stages) and appends your statuses to it; the MCP tool reconciles this automatically and returns a `pipeline_reconciliation` report. The funnel is correct only when `unrequested_statuses_remaining`, `missing_requested_statuses`, and `warnings` are all empty — resolve leftovers with `get_pipeline_impact` + `delete_workflow_status` and missing keys with `update_workflow_structure` before configuring anything that references a status. A seeded stage left in place is invisible to your design's gates, hints, and transfers, and duplicates (e.g. a stray `payment_sent` next to your `send_link`) mis-route leads into dead stages.
 - **The agent routes on `entry_hint`, not `description`.** A status's `description` never reaches the prompt. The placement rule ("annual income is under 800,000 — place the lead here") goes in `entry_hint`; gate advancement with `variable_refs` / `required_field_keys`. When the branch is fully determined by saved field values, encode it as `transition_rules.rule_groups` (server-evaluated `field` / `operator` / `value` conditions) with `auto_evaluate: true`, so the platform routes the lead the moment the fields are saved instead of depending on the agent calling `set_lead_status`.
@@ -162,7 +162,7 @@ These are the semantics customers (and naive designs) most often get wrong:
 - **"Notify me" has two shapes.** A webhook subscription filtered on `to_status.key` fires on *every* matching status change (your endpoint dedupes); a status automation fires *exactly once per lead per rule* and can template the request body from lead data.
 - **Transfers fire only from hard-terminal statuses.** `is_terminal` is checked before `transfer_config` is even read, and soft-terminal keys (`future_*`, `contact_later`, `colder`) are filtered out first — either mistake saves cleanly and never fires. Auto-transfer is also skipped while the lead is in human support (`in_support`). Transfers always create a fresh run on the target agent **at its initial status** — a transfer cannot land on a chosen status in another agent (the only status→status pointer is `timeout_config.target_status_key`, same workflow only). Source cadence is cancelled, the target's cadence starts over, and collected fields travel as a read-only transfer-chain snapshot — they are not copied into the target's fields. If the "transfer" is just a stage of the same conversation, it's a status, not a transfer.
 - **Agent creation order never satisfies a connection.** A handoff exists only after the source's terminal status has been read back with `transfer_config.target_workflow_id` equal to the destination's real id. Preserve the expected connection manifest across the build, wait until all referenced ids exist, then reconcile every source. Creating A before B means returning to A after B exists; creating B before A changes nothing. A multi-agent build is incomplete until every expected edge passes this read-back check.
-- **Account knowledge is not agent knowledge.** `knowledge_bases` is the client-owned catalog; `workflow_knowledge_bases` is the per-agent assignment. One KB may be shared by several agents, and each agent may receive a different ordered subset. Listing the account catalog proves only that a KB exists. Agent access exists only after `list_knowledge_bases({ workflow_id })` reads that KB back on the intended agent. Create or reuse the account KB first, attach by its real id, detach only the relationship when removing access, and never delete shared content to change one agent's assignment.
+- **Account knowledge is not agent knowledge.** `knowledge_bases` is your account-owned catalog; `workflow_knowledge_bases` is the per-agent assignment. One KB may be shared by several agents, and each agent may receive a different ordered subset. Listing the account catalog proves only that a KB exists. Agent access exists only after `list_knowledge_bases({ workflow_id })` reads that KB back on the intended agent. Create or reuse the account KB first, attach by its real id, detach only the relationship when removing access, and never delete shared content to change one agent's assignment.
 - **Account channels are not questions.** The account already knows its saved timezone, connected WhatsApp numbers, send-capable email senders, active call numbers, and which active numbers currently have SMS enabled. Read them before planning. One resource means “use this exact resource or configure another”; several means a real resource selector; zero means an explicit setup/omit decision. Never ask “do you already have a WhatsApp number?” or request an email/phone the platform can list. `verification_status: "verified"` is not enough when email `can_send` is explicitly false, and `sms_enabled: false` means the row is not a current SMS channel—not proof that it can safely be enabled.
 - **The source selects intensity; the target implements it.** Put mutually exclusive routing criteria in source `entry_hint` values and one `transfer_config` on each terminal branch. Put sales urgency, booking tools, nurture tone, enabled channels, and contact frequency on the corresponding target workflows — never on the source status.
 - **Function effects are buffered and return nothing**, so a scheduled function cannot create a lead and enroll it in the same run. To sync leads in *and* start conversations, call the public leads API (it upserts, merges metadata, enrolls, and starts first contact in one request) from the function, or use a two-phase sweep.
@@ -212,6 +212,6 @@ Produce a configuration spec containing:
 
 ## Resources
 
-- Read [references/recipes.md](references/recipes.md) when matching a customer ask to a known pattern — start from the closest recipe.
+- Read [references/recipes.md](references/recipes.md) when matching your ask to a known pattern — start from the closest recipe.
 - Read [references/configuration-reference.md](references/configuration-reference.md) when writing the concrete configuration for any primitive.
 - Read [references/mcp-tool-surface.md](references/mcp-tool-surface.md) before the first write: which tool writes what, its read-back pair, what it overwrites, and which properties MCP cannot reach at all.

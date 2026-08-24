@@ -124,10 +124,10 @@ keep it transactional and it approves fast and cheap. A win-back nudge is `MARKE
 
 ## Connection model
 
-- Connecting is a **hosted setup link** from `connect_whatsapp_number`; the customer
-  authorizes Meta there. There is no code/OTP step to script.
+- Connecting is a **hosted setup link** from `connect_whatsapp_number`; you
+  authorize Meta there. There is no code/OTP step to script.
 - Two connection types exist: **dedicated** (a number Nexor/Meta manages) and
-  **coexistence** (the customer keeps using the WhatsApp Business app on the same
+  **coexistence** (you keep using the WhatsApp Business app on the same
   number; human sends are mirrored into Nexor).
 - Inbound webhooks and events are registered automatically on completion — no manual
   webhook step.
