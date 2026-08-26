@@ -1,6 +1,6 @@
 ---
 name: automation-architecture
-description: Map plain-language Nexor requirements to exact configuration and build it through Nexor MCP tools. Covers arbitrary lead metadata, notifications, CRM sync, field/status events, qualification gates, workflow tools and hooks, webhooks, jobs, cloud/scheduled functions, cadence, channel and knowledge-base assignment, multi-agent systems, and transfers. Use when a customer asks how an agent can receive or use custom lead information, describes custom behavior, an integration, routing, or a multi-agent build. Discover account configuration before questions, decompose variables, stages, and boundaries, require plan review and sign-off before mutation, prefer deterministic primitives, and read back every expected channel, connection, and knowledge assignment regardless of creation order.
+description: Map plain-language Nexor requirements to exact configuration and build it through Nexor MCP tools. Covers arbitrary lead metadata, notifications, CRM sync, field/status events, qualification gates, workflow tools and hooks, webhooks, jobs, cloud/scheduled functions, cadence, channel and knowledge-base assignment, meeting-host selection, multi-agent systems, and transfers. Use when a customer asks how an agent can receive or use custom lead information, describes custom behavior, an integration, routing, meeting ownership, or a multi-agent build. Discover account configuration before questions, decompose variables, stages, and boundaries, require plan review and sign-off before mutation, prefer deterministic primitives, and read back every expected channel, connection, and knowledge assignment regardless of creation order.
 ---
 
 # Automation architecture
@@ -145,6 +145,18 @@ Treat the client's endpoint as the capability and Nexor as the orchestrator:
 6. Define success, failure, persistence, and retry behavior. Never let the agent invent an assignment, slot, price, or external result after a failed call.
 
 Read the workflow-tool and stage-gate contract in [references/configuration-reference.md](references/configuration-reference.md) and use the round-robin mapping in [references/recipes.md](references/recipes.md) when the ask resembles sales-rep assignment.
+
+## Meeting-host selection
+
+Meeting-host selection decides which of an appointment agent's assigned executives supplies the slots shown to a lead. It is not lead ownership, pipeline assignment, or an external CRM round robin.
+
+1. Call `list_meeting_types` and `list_executives` for the exact workflow before proposing a change. The agent must use exactly one existing meeting type. If several exist, stop and help the operator consolidate them to one; never create or silently choose another type.
+2. Treat zero or one assigned executive as having no routing decision. With two or more executives and no selection criteria, explain that availability is distributed evenly by round robin. After adding a second executive, proactively offer a choice between that default and an explicit host-selection rule.
+3. Build a rule only from facts the booking agent can actually know: standard lead properties, lead metadata, or workflow fields returned by `get_workflow`. Name assigned executives exactly as returned by `list_executives`. If a rule names an unknown or unassigned person, resolve that mismatch with the operator (and `invite_user` when requested) before writing anything.
+4. Keep `agent_selection_criteria` short and ordered: state the first matching condition, its host, subsequent fallbacks, and a final fallback across the remaining assigned executives. Do not claim this prose is a server-enforced eligibility rule; the booking agent evaluates it when choosing among returned slots.
+5. Update only `agent_selection_criteria` on the sole existing id with `update_meeting_type`. Then call `list_meeting_types` again and compare the persisted value exactly. Report success only after the same id contains the requested criteria; otherwise report the mismatch and do not imply that routing changed.
+
+Do not use legacy meeting-selection tools, direct database access, or a second meeting type to express routing.
 
 ## Workflow
 

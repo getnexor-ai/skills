@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Publicly shareable Agent Skills from the Nexor team",
-    "version": "0.4.0"
+    "version": "0.4.1"
   },
   "plugins": [
     {
