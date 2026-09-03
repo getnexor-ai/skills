@@ -97,6 +97,7 @@ Deleting an agent group is relationship-only: it removes the group and clears ea
 | Tool stage gate only | `set_tool_stage_gate` | `list_workflow_tools` |
 | `config` bag — incl. **`status_automations`**, `gate_outbound_to_hours`, `disabled_channels` | `update_workflow_config` | `get_workflow` |
 | Cadence windows and intensity | `set_workflow_cadence` | `get_workflow_cadence` |
+| Re-contact reasons (qualification / futurology) | `set_workflow_qualification` | `get_workflow_qualification` |
 | Status-scoped webhook | `configure_status_webhook` | `list_webhooks`, `get_webhook` |
 | General event webhook | `create_webhook` / `update_webhook` | `list_webhooks` |
 | Reminders / host notifications / recontact | `set_reminder_rule`, `set_host_reminder_rule`, `set_recontact_rule` | `list_reminder_rules`, `list_host_reminder_rules`, `list_recontact_rules` |
@@ -146,8 +147,8 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 | `reorder_workflow_statuses` | Atomic complete-tail replacement; the first three semantic stages stay fixed | Read `get_workflow`, submit every persisted tail key exactly once, then read back and compare |
 | `update_workflow_status` | Field-level merge, but `null` **clears** the block | Pass `null` only to intentionally clear |
 | `set_workflow_prompt` | **Full overwrite** of the global prompt | `get_workflow` first, edit, send whole |
-| `set_workflow_cadence` | Whole-document PUT for `blocks`; `dayConfig` keys omitted are **preserved** | `get_workflow_cadence` first, send the full edited document |
-| `set_workflow_qualification` | Merge by natural key; `replace: true` deletes and replaces | Default to merge |
+| `set_workflow_cadence` | Whole-document PUT for `blocks`; `dayConfig` keys omitted are **preserved** | `get_workflow_cadence` first, send the full edited document. Two `dayConfig` keys it returns are legacy v1 and unread by the block engine: `call_interval_minutes` and `template_interval_minutes` pass through untouched on a round-trip but are **refused if you change them** — use `template_to_call_delay_minutes` for the gap between touchpoints |
+| `set_workflow_qualification` | Merge by key; `replace: true` clears the workflow's **entire** model before writing. `categories` and `conditions` are two names for the **same rows**, so the same key in both is refused | Every row needs its key **and** its human-readable name (`category_name` / `condition_name`); a row without one is refused. Re-contact timing defaults to a fixed 30-day delay, so set `timing_type` + `timing_config` only to override it. Default to merge |
 | `set_workflow_voice` | Switches the voice AND/OR merges tuning keys | To change the voice pass **one** of `gender` (`male`/`female`), `voice_id`, or `voice_name` — the server resolves and writes the effective voice, and returns `resolved_voice.preview_url` to share. Tuning knobs (`voiceSpeed`, …) go in the `voice` object |
 | `delete_workflow_status` | **Destructive.** Fails with `STATUS_HAS_LEADS` unless `migration_target` is given | Always `get_pipeline_impact` first |
 | `delete_workflow_tool` | Soft-disable by default; `hard: true` is permanent | Leave `hard` off |
