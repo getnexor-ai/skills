@@ -24,6 +24,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 18. [“Create two agents using the account’s existing channels”](#18-create-two-agents-using-the-accounts-existing-channels)
 19. [Build a two-agent system end to end, from brief to live](#19-build-a-two-agent-system-end-to-end-from-brief-to-live)
 20. [“Change the agent's call voice — make it male / female / a specific voice”](#20-change-the-agents-call-voice--make-it-male--female--a-specific-voice)
+21. [“Once the lead says yes, a payment agent sends the link”](#21-once-the-lead-says-yes-a-payment-agent-sends-the-link)
 
 ---
 
@@ -232,7 +233,7 @@ Enable the client's re-engage agent before creating this rule. Ensure the nurtur
 6. Treat both handoffs as an expected connection manifest. After the source and both targets have real ids, update the source statuses even if the source was created first, then read the source back and prove `qualified_now → <sales-now-agent id>` and `qualified_later → <nurture-later-agent id>`. Repair and re-read any missing or misdirected edge before calling the system complete.
 7. Verify each branch with a raw conversation: `qualified_now` must create a fresh sales run and start the sales cadence; `qualified_later` must create a fresh nurture run with the biweekly rule. Confirm both targets read the transfer chain without asking for fit, need, or timeline again.
 
-Handoff messaging is composed automatically (contextual transition when the messaging window is open, otherwise the target's template cascade). Do **not** also aim a welcome job/automation at freshly transferred leads. Apply the 80% test: if the two targets share nearly all prompt, tools, channels, and schedule, use one agent with more statuses instead.
+Handoff messaging is composed automatically (contextual transition when the messaging window is open, otherwise the target's template cascade). Do **not** also aim a welcome job/automation at freshly transferred leads, and do **not** script hand-off dialogue on the source — the source moves the lead and ends its turn; the target speaks next (recipe 21). Apply the 80% test: if the two targets share nearly all prompt, tools, channels, and schedule, use one agent with more statuses instead.
 
 ---
 
@@ -489,7 +490,7 @@ The emphasis shift belongs in that status's `entry_hint` and in per-status promp
 }
 ```
 
-The closing tone, the booking tools, and the higher-intensity cadence now live on `<closer-agent-id>`, not in a paragraph. Instruct the closer to read budget from the transfer chain rather than re-asking — transferred fields are a read-only snapshot, not copied into its own fields.
+The closing tone, the booking tools, and the higher-intensity cadence now live on `<closer-agent-id>`, not in a paragraph. Instruct the closer to read budget from the transfer chain rather than re-asking — transferred fields are a read-only snapshot, not copied into its own fields. Write the boundary silently on the source: when the criterion is met it moves the lead and ends its turn, with no hand-off dialogue; the closer speaks next from its own arrival rule (recipe 21 shows the payment-link variant).
 
 If the handover must wait on something outside the conversation (a human review, a nightly batch, an external signal), use the pause boundary instead: `pause_bot: true` on the status and a background job with the `workflow_transfer` action as the named executor. A pause boundary with no executor parks the lead silently forever.
 
@@ -663,3 +664,42 @@ You can switch and tune in one call: `set_workflow_voice(workflow_id, gender:"ma
 **Failure modes to surface, not swallow:** an unknown `voice_id` or a gender with no match in the workflow's language returns `INVALID_VOICE` with `available_voices`. Do not silently fall back — tell the user the catalog has no such voice for their language, list what is available (with preview URLs), and offer to add one via the add-language flow.
 
 **Rejected rungs:** a prompt line asking the agent to "sound male" (speech, not the TTS voice); setting only the grammatical gender field (changes es/pt self-reference wording, never the voice); hand-writing `ai_config.voice.voice_id` (the call runtime reads top-level `ai_config.voice_id`, so a nested-only write is ignored — the exact bug this tool now prevents).
+
+---
+
+## 21. “Once the lead says yes, a payment agent sends the link”
+
+**Primitive:** Law 3 — a boundary status on the selling/qualifying agent with `transfer_config` to a payment agent (goal `payment_link`), plus `set_payment_link` on that target. The link is never prose in a prompt.
+
+**What the platform does at the boundary — design around it.** The moment the source agent places the lead in the terminal status, the platform deactivates the source run, creates a fresh run on the payment agent, and makes the **payment agent speak next**: with the messaging window open (or an active iMessage thread) it composes its arrival message from *its own* prompt plus the carried context (the runtime tells it: continue naturally, do not introduce yourself again, do not repeat answered questions, move toward this workflow's goal); with the window closed it sends its opening WhatsApp template. Two consequences:
+
+- **The source never speaks the hand-off.** No "te paso con mi colega de pagos", no "en un momento te llega el link", no farewell, no preview of what happens next. The source's last turn is the natural end of its own job (confirming the choice); the status move is silent, and the next message the lead sees comes from the payment agent. Hand-off dialogue produces two voices, a promise the source cannot keep, and a duplicated first message. Write the source prompt so that when the acceptance criterion is met it places the lead in the boundary status and ends its turn — it does not announce, narrate, or explain the transfer.
+- **The payment agent's first message is the payment link, in context.** Its prompt states the arrival rule explicitly: the lead arrives having already decided — read what they chose, the amount, and any delivery/date details from the transfer chain (and lead metadata), acknowledge that in one line, and send the link. No greeting, no self-introduction, no re-qualification, no "how can I help", no re-asking anything the chain already holds. Everything after that turn is payment support: confirm payment, handle a failed or expired link, answer price objections, re-send.
+
+**Build:**
+
+1. **Source** (selling/qualifying agent). One terminal status with the acceptance criterion and the pre-payment facts as required fields:
+
+```json
+{
+  "key": "ready_to_pay",
+  "label": "Ready to pay",
+  "category": "won",
+  "is_terminal": true,
+  "entry_hint": "The lead has explicitly accepted the offer and every pre-payment detail (plan or item, quantity, amount, date/address when required) is confirmed and saved — place the lead here.",
+  "required_field_keys": ["selected_plan", "amount"],
+  "transfer_config": { "target_workflow_id": "<payment-agent-id>" }
+}
+```
+
+   Source prompt rule (prose, in the agent's language): *"When the lead accepts and every pre-payment detail is saved, move them to Ready to pay and end your turn. Do not announce a hand-off, a colleague, or an incoming link."*
+
+2. **Target** (payment agent, goal `payment_link`). Configure the link first with `set_payment_link` (`fixed` URL, `tool` capture path, or `lead` metadata key) and read `config.payment_link` back with `get_workflow`. The agent sends the link through its built-in transactional retrieval, which reads the lead's link and then `config.payment_link` — with neither configured it cannot send, and a `{{payment_link}}` template is refused (`payment_link_missing`), so do this before any read-back. Arrival rule in the payment agent's prompt: *"The lead arrives having already accepted <plan/item> for <amount>; those facts are in the transferred context and are never re-asked. Your first message acknowledges exactly that in one sentence and sends the payment link — nothing else: no greeting, no introduction, no questions. If the link cannot be retrieved, say it is being prepared and escalate."* For the window-closed WhatsApp path, `set_opening_templates` with an approved template whose body carries `{{payment_link}}` and the same context-first tone (no greeting-and-ask). On other channels the prompt rule governs the AI turn.
+
+3. **Connection manifest:** `ready_to_pay → <payment-agent-id>`; reconcile and read back per recipe 19.
+
+**Verify** with a raw conversation driven to acceptance: (a) the source's last outbound message contains no hand-off language; (b) a fresh run exists on the payment agent at its initial status and the source run is `transferred`; (c) the payment agent's first outbound message contains the link and names the accepted item/amount; (d) nothing re-asks a field the chain already holds.
+
+**Editing either side later:** these two prompts are one contract. Before rewriting the source's closing behaviour or the payment agent's first message, read the other agent's relevant status and prompt (they share an agent group — read the group, not the single agent) so the boundary stays silent on one side and context-aware on the other.
+
+**Rejected rungs:** one agent whose prompt says "after they accept, send the link" when the payment side needs a different persona, tool set, or cadence (Law 3, recipe 17); a source prompt that "warms up" the transfer; a welcome job or automation aimed at transferred leads (the arrival message already speaks); the URL written into a prompt (`set_payment_link` is the only path the runtime reads).
