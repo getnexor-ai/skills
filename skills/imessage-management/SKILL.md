@@ -22,7 +22,8 @@ monthly invoice. Still confirm the exact figure and the amount charged today fro
 `sandbox: true` and `dueTodayUsd: 0`) before you charge.
 
 iMessage has its **own number inventory** and binds to a workflow (agent) exactly like
-WhatsApp. It is not the Phone/voice/SMS line.
+WhatsApp — including **group sharing**: a number bound to one agent is used by every
+agent in the same agent group (`master_workflow_id`). It is not the Phone/voice/SMS line.
 
 ## The one rule that prevents the most common mistake
 
@@ -51,13 +52,21 @@ inventory, stop and call `list_imessage_numbers` instead.
 An iMessage number can send to a lead only when **both** are true:
 
 1. `setupStatus` is `"ready"` (Dial finished provisioning — not `provisioning` or `failed`), and
-2. it is **assigned to the target workflow** (bound via `assign_imessage_to_workflow`).
+2. it is **assigned to the target workflow or to a sibling in the same agent group**
+   (bound via `assign_imessage_to_workflow`; siblings inherit it through
+   `master_workflow_id`, exactly like WhatsApp).
 
 An unassigned number is **dormant**: still owned and billed, but detached — it sends
 nothing, and the agent shows no iMessage capability. This is the #1 gotcha: a perfectly
 "ready" number that was never assigned silently contacts no one. When a customer says
 "my iMessage isn't working," check `list_imessage_numbers` for both `setupStatus: ready`
 **and** a non-null bound workflow before looking anywhere else.
+
+`list_imessage_numbers` / `get_imessage_number` expose the sharing directly:
+`imessageWorkflowId` is the single owner, `owner` adds its name and agent group
+(`masterWorkflowId`, `masterName`), and `sharedWith` lists every sibling agent that
+already sends and receives through the number. **An agent in `sharedWith` is connected**
+— do not "fix" it with another assign call; that only moves the owner around.
 
 ## Buy + provision a number (ordered, consent-gated — it charges money)
 
@@ -90,9 +99,13 @@ Follow this order every time; never skip the offer or the confirmation.
 `assign_imessage_to_workflow` binds an iMessage number to a workflow (agent): this is
 what makes inbound iMessages reach that agent, and the number's display name follows the
 agent's persona. Omit `workflow_id` to **unbind** (the number stays owned and billed,
-just detached). A workflow keeps **at most one** iMessage number — binding a number to an
-agent that already has one replaces it. To pick the agent, list options with
-`list_workflows`; to confirm the target belongs to this client it must appear there.
+just detached). An agent group (or a standalone agent) keeps **at most one** iMessage
+number — binding a number to an agent whose group already has one replaces it, releasing
+the sibling's number to dormant. Bind **once per group**: every sibling under the same
+`master_workflow_id` sends through the owner's number automatically, new inbound leads on
+that number land on the owner agent, and existing leads follow whichever sibling holds
+their active run. To pick the agent, list options with `list_workflows`; to confirm the
+target belongs to this client it must appear there.
 
 ## Display identity — the name and photo leads see
 
@@ -141,7 +154,9 @@ operator re-grant the key's scopes — do **not** fall back to guessing iMessage
 - Provisioning **spends money** (a recurring monthly line). Always show the price from
   `get_imessage_offer` and get explicit confirmation before `provision_imessage_number`.
 - Assignment is what makes a ready number actually live — always finish with
-  `assign_imessage_to_workflow` and read back which agent owns which number.
+  `assign_imessage_to_workflow` and read back which agent owns which number and which
+  siblings share it (`owner` + `sharedWith`). One number per agent group; never re-assign
+  a shared number to a sibling that already appears in `sharedWith`.
 - Identity edits are name + photo only; never attempt call settings or the nickname.
 - Read iMessage state only from `list_imessage_numbers`, never from `list_phone_numbers`.
 
@@ -151,4 +166,5 @@ operator re-grant the key's scopes — do **not** fall back to guessing iMessage
   channel mix that iMessage plugs into (iMessage participates in the initial-contact
   cascade and per-block cadence like any other channel).
 - `whatsapp-management` — the parallel messaging channel; same "assign a number to an
-  agent" shape, but WhatsApp uses templates and a 24-hour window that iMessage does not.
+  agent, the whole agent group shares it" shape, but WhatsApp uses templates and a
+  24-hour window that iMessage does not.
