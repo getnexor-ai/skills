@@ -434,6 +434,9 @@ Design rules:
 - Every hop restarts cadence. If the "transfer" is a stage of the same conversation, it's a status, not a transfer.
 - Auto-transfer is skipped while the lead is waiting on a human (support handoff).
 - The target agent's prompt should explicitly read the transferred context ("budget and need are in the transfer chain — do not re-ask").
+- The source agent does not speak the hand-off. Its prompt moves the lead to the boundary status when the criterion is met and ends the turn — no "I'll pass you to a colleague", no "the link is on its way", no farewell. The platform makes the target speak next (step 5); a narrated hand-off produces two voices and a promise the source cannot keep.
+- The target agent's prompt carries an explicit arrival rule — what the lead already did, which transferred facts are never re-asked, and what the very first message is — because that message is composed from the target's own prompt when the window is open. A payment-link target's arrival message is one line of context plus the payment link (recipe 21); configure `set_payment_link` first, since both the built-in transactional tool and `{{payment_link}}` templates read it.
+- Editing one member of an agent group starts by reading the group: the siblings, the statuses that transfer into and out of the edited agent, and the shared channel bindings. Both sides of every boundary must stay consistent.
 
 ### Boundary shapes: terminal handoff vs pause handoff
 
