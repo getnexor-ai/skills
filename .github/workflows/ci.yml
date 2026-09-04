@@ -1,0 +1,32 @@
+name: CI
+
+# Runs on every PR and every non-main push. This is the same gate the publish
+# workflow runs, so a red PR can never become a green publish.
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  check:
+    name: Lint, test, validate skills + tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: prepublish-check (frontmatter, marketplace, tool names, links, tarball)
+        run: npm run check
+
+      - name: Show what would be published
+        run: npm pack --dry-run

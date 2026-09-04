@@ -6,12 +6,16 @@
 // It runs in CI on every PR *and* as `prepublishOnly`, so it cannot be skipped
 // by publishing from a laptop.
 //
-// It enforces five things when the catalog contains skills:
+// It enforces seven things when the catalog contains skills:
 //   1. Every skill has usable frontmatter (an agent picks skills by description).
 //   2. marketplace.json and skills/ agree — no phantom entries, no orphans.
 //   3. Nothing under an `internal/` directory can reach the tarball.
 //   4. Nothing listed in package.json > nexorSkills.unpublished can reach it.
 //   5. Every skill that IS meant to publish actually made it in.
+//   6. Every snake_case token in inline code is a real MCP tool
+//      (docs/mcp-tool-manifest.json), a labelled runtime tool, or an
+//      allowlisted non-tool token (docs/tool-name-allowlist.json).
+//   7. Every relative link (and its #anchor) resolves.
 //
 // Exit code 0 = safe to publish.
 
@@ -19,9 +23,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { lintSkills, loadJson } from "./lib/skill-lint.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS_DIR = path.join(ROOT, "skills");
+const MANIFEST_PATH = path.join(ROOT, "docs", "mcp-tool-manifest.json");
+const ALLOWLIST_PATH = path.join(ROOT, "docs", "tool-name-allowlist.json");
 
 const errors = [];
 const warnings = [];
@@ -129,6 +136,18 @@ if (files.length) {
   }
 }
 
+// ------------------------------------------------- 6-7. tool names and links
+let lint = { errors: [], warnings: [], stats: { tokens: 0, links: 0 } };
+if (!existsSync(MANIFEST_PATH)) {
+  fail(`${path.relative(ROOT, MANIFEST_PATH)} is missing — regenerate it with scripts/generate-tool-manifest.mjs.`);
+} else if (!existsSync(ALLOWLIST_PATH)) {
+  fail(`${path.relative(ROOT, ALLOWLIST_PATH)} is missing.`);
+} else {
+  lint = lintSkills({ skillsDir: SKILLS_DIR, manifest: loadJson(MANIFEST_PATH), allowlist: loadJson(ALLOWLIST_PATH), root: ROOT });
+  lint.errors.forEach(fail);
+  lint.warnings.forEach(warn);
+}
+
 // -------------------------------------------------------------------- report
 const publishable = onDisk.filter((n) => !unpublished.has(n));
 console.log(`prepublish-check — @nexor/skills@${pkg.version}`);
@@ -136,6 +155,8 @@ console.log(`  skills on disk : ${onDisk.length}`);
 console.log(`  publishable    : ${publishable.length}`);
 console.log(`  withheld       : ${unpublished.size ? [...unpublished].join(", ") : "none"}`);
 console.log(`  tarball entries: ${files.length}`);
+console.log(`  tool tokens    : ${lint.stats.tokens} checked against the MCP manifest`);
+console.log(`  relative links : ${lint.stats.links} resolved`);
 
 for (const w of warnings) console.warn(`  warn  ${w}`);
 
