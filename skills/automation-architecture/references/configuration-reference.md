@@ -116,7 +116,7 @@ Nexor has **two** custom-data stores. Confusing them is the most common design e
 
 Per field: `key`, `label`, `description`, `type` (`text`, `number`, `integer`, `currency`, `boolean`, `date`, `datetime`, `email`, `phone`, `select`, `multiselect`, `url`), `required`, `options[]`, `extraction_hints`, `validation`, plus `metadata_key` and `intake_value_map`.
 
-The prompt renders required fields as PENDING and optional ones as "collect if it comes up naturally." The agent saves values with `save_field`; values live per workflow run (not in metadata). Status advancement gates on **fields** (`variable_refs`, `required_field_keys`) — never on metadata.
+The prompt renders required fields as PENDING and optional ones as "collect if it comes up naturally." The agent saves values with `save_field` (a runtime tool — not callable over MCP; the operator-side write is `update_lead`); values live per workflow run (not in metadata). Status advancement gates on **fields** (`variable_refs`, `required_field_keys`) — never on metadata.
 
 ### Lead metadata — "data that arrives with or about the lead"
 
@@ -588,7 +588,7 @@ The final audit is set equality plus order for every agent: no missing KB, no ex
 
 ## 12. Account channel inventory and agent binding
 
-Never ask the customer to recall configuration that Nexor can read. In the Master Editor, call `inspectAccountChannels` before planning an agent's channels or asking for timezone. Outside that surface, perform the equivalent reads:
+Never ask the customer to recall configuration that Nexor can read. Call `get_account_readiness` before planning an agent's channels or asking for timezone, then the channel list tools (and `get_integration_status` when the agent books):
 
 | Fact/resource | Source | Usable when | Agent binding |
 |---|---|---|---|
@@ -597,10 +597,12 @@ Never ask the customer to recall configuration that Nexor can read. In the Maste
 | Email sender | `list_email_senders.senders[]` | `can_send: true` (`verification_status` alone does not override an explicit `can_send: false`) | `update_workflow_config` with `config.email_sender_id` |
 | Call number | `list_phone_numbers.numbers[]` | `is_active: true` and `provision_status !== "released"` | `assign_number_to_workflow({ number_id, workflow_id })` |
 | SMS channel | same `list_phone_numbers` row | call-number conditions plus `sms_enabled: true` | `set_number_sms({ number_id, enabled: true, sms_workflow_id })` |
+| Host calendar | `get_integration_status.calendars[]` / `get_calendar_connections({ user_id })` | `status === "active"` (`expired` / `needs_reauth` / `error` block that host's slots) | `connect_calendar({ user_id, provider })` — a human step; see [booking-agent.md](booking-agent.md#4-hosts-schedule-calendar) |
+| Booking provider | `get_integration_status.booking_providers[]` | `excluded_hosts` empty | `set_calendly_binding` / `set_external_booking` |
 
 Preserve the returned ids; phone and SMS are two capabilities of the same inventory row, not two unrelated catalogs. SMS is not a resource you provision — it rides on a phone number the account already has: as long as an active Twilio number exists, SMS is activated per agent by enabling it on that number and pointing its SMS route at the agent's workflow with `set_number_sms({ number_id, enabled: true, sms_workflow_id })`. SMS requires a Twilio-carrier number (Telnyx numbers cannot carry SMS); there is no country restriction. Preserve current `workflow_id` / `sms_workflow_id` / WhatsApp `workflow_id` as well. Email senders may be shared by multiple agents. WhatsApp has one direct `workflow_id`, call has one `workflow_id`, and SMS has one independent `sms_workflow_id`; call and SMS on the same physical number may point to different agents. Selecting an exclusive capability already assigned elsewhere is a reassignment.
 
-The Master Editor's `inspectAccountChannels` response normalizes those reads:
+Normalize those reads into one inventory before selecting anything — this is your working structure, not a tool response:
 
 ```json
 {
@@ -625,4 +627,4 @@ When “configure another” is selected, suspend the build until a new real id 
 
 After workflow creation, apply each selected id and synchronize `config.disabled_channels` plus `first_contact_channel`. Repeat the inventory read and `get_workflow` for every new agent and every displaced existing agent. Disable a lost capability on the displaced agent or assign its separately confirmed replacement. Relationship cleanup uses these exact calls: `assign_whatsapp_to_workflow({ number_id })` omits the optional `workflow_id` to unbind; `update_workflow_config({ workflow_id, config: { email_sender_id: null } })` explicitly clears email (omitting the key in a merge preserves the stale sender); `set_number_sms({ number_id, enabled: true })` omits the optional `sms_workflow_id` when SMS should stay enabled but unowned; `assign_number_to_workflow({ number_id })` omits the optional `workflow_id` and makes call routing client-scoped, so use it only when that account-wide impact was explicitly approved. Completion requires exact binding and config equality for every requested channel. Enabling a channel in cadence without assigning a usable sender/number does not satisfy the manifest.
 
-For WhatsApp outreach, `inspectAccountChannels.whatsapp.approved_openers` is the executable prerequisite inventory. It contains only `list_whatsapp_templates({ status: "APPROVED" })` rows whose `internal_type` is `greeting`, `opening`, `legacy_greeting`, or `outbound`. Require at least one real template id/name, configure the workflow's opening intent with `set_opening_templates({ workflow_id, mode, template_names })`, and read it back with `get_template_pool({ workflow_id })`. Activation is blocked until the selected opener remains approved and the observed opening pool matches.
+For WhatsApp outreach, the `approved_openers` list above is the executable prerequisite inventory. It contains only `list_whatsapp_templates({ status: "APPROVED" })` rows whose `internal_type` is `greeting`, `opening`, `legacy_greeting`, or `outbound`. Require at least one real template id/name, configure the workflow's opening intent with `set_opening_templates({ workflow_id, mode, template_names })`, and read it back with `get_template_pool({ workflow_id })`. Activation is blocked until the selected opener remains approved and the observed opening pool matches.

@@ -11,13 +11,13 @@
     "ai-agent",
     "mcp"
   ],
-  "homepage": "https://github.com/DropoutCapital/nexor-public-skills#readme",
+  "homepage": "https://github.com/getnexor-ai/skills#readme",
   "bugs": {
-    "url": "https://github.com/DropoutCapital/nexor-public-skills/issues"
+    "url": "https://github.com/getnexor-ai/skills/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DropoutCapital/nexor-public-skills.git"
+    "url": "git+https://github.com/getnexor-ai/skills.git"
   },
   "license": "MIT",
   "author": "Nexor <ian@getnexor.ai>",
@@ -39,8 +39,11 @@
     "LICENSE"
   ],
   "scripts": {
+    "lint": "node scripts/lint.mjs",
+    "test": "node --test tests/",
     "check": "node scripts/prepublish-check.mjs",
-    "prepublishOnly": "node scripts/prepublish-check.mjs"
+    "manifest": "node scripts/generate-tool-manifest.mjs",
+    "prepublishOnly": "npm run lint && npm test && node scripts/prepublish-check.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -20,7 +20,7 @@ Read [configuration-reference.md](configuration-reference.md) for what the paylo
 The platform ships its own required process, returned by `describe_agent_configuration`. It is not optional and it is not advice — `review_agent_system_plan` returns a `signoff_prompt` that explicitly instructs you not to mutate anything until the user approves a fingerprint.
 
 1. **`describe_agent_configuration`** — call before proposing any non-trivial or multi-agent build. Returns the current canonical surface map, clarification checklist, and required process.
-2. **Read current state** — `list_workflows`, `get_workflow`, `list_workflow_tools`, `list_knowledge_bases`, `list_webhooks`, `get_workflow_cadence`.
+2. **Read current state** — `get_account_readiness`, `list_workflows`, `get_workflow`, `list_workflow_tools`, `list_knowledge_bases`, `list_webhooks`, `get_workflow_cadence`; for appointment agents also `list_meeting_types`, `list_executives`, `get_calendar_connections` and `get_integration_status` (`calendars[]`, `booking_providers[]`).
 3. **`review_agent_system_plan({ plan })`** — preflight the whole system before mutating. It validates the plan and returns `ready_for_signoff`, `blocking_issues`, `clarification_questions`, and a stable `plan_fingerprint`.
 4. **Get explicit user approval of the fingerprint.** Show the returned summary verbatim and ask the exact `signoff_prompt` question.
 5. **Create paused, configure, read back.** `create_workflow` always creates a PAUSED workflow — that is the safety property the whole protocol rests on. Do not activate as part of the build.
@@ -52,7 +52,7 @@ The platform ships its own required process, returned by `describe_agent_configu
 
 **This is the native form of the Law 3 connection manifest.** `transfer_to_agent_ref` is validated against the set of defined agent refs, so a handoff pointing at an agent that does not exist in the plan is a *blocking* issue before anything is created. Use agent refs here; real `target_workflow_id`s only exist after creation.
 
-What the validator blocks: missing `name` / `goal_type`, zero statuses, duplicate agent refs or status keys, a status with no key, a `transfer_to_agent_ref` that matches no agent, a `status_webhook` with no valid `agent_ref` / `status_key`.
+What the validator blocks: missing `name` / `goal_type`, zero statuses, duplicate agent refs or status keys, a status with no key, a `transfer_to_agent_ref` that matches no agent, a `status_webhook` with no valid `agent_ref` / `status_key`. For `goal_type: "appointment"` it also blocks on a missing `meeting_type: { name, duration_minutes }`, an empty `hosts: [{ user_id | email | name }]`, and the absence of both a `calendar_plan: { provider: "google" | "outlook" | "calendly" }` (or `hosts[].calendar_provider`) and an external `booking_provider` (`gohighlevel` | `external_booker`) — see [booking-agent.md](booking-agent.md#2-the-ordered-path).
 
 What it raises as a clarification (also blocks `ready_for_signoff`): missing `primary_responsibility`, `language`, `timezone`, `channels`, or a non-initial status with neither `entry_hint` nor `transition_rules` — i.e. **the validator enforces Law 2's "every stage needs an entry criterion" for you.**
 
@@ -96,7 +96,17 @@ Deleting an agent group is relationship-only: it removes the group and clears ea
 | Cadence windows and intensity | `set_workflow_cadence` | `get_workflow_cadence` |
 | Status-scoped webhook | `configure_status_webhook` | `list_webhooks`, `get_webhook` |
 | General event webhook | `create_webhook` / `update_webhook` | `list_webhooks` |
-| Reminders / host notifications / recontact | `set_reminder_rule`, `set_host_reminder_rule`, `set_recontact_rule` | `list_reminder_rules`, `list_host_reminder_rules`, `list_recontact_rules` |
+| Reminders / host notifications / recontact | `get_reminder_catalog` first (per-account channel availability, dispatched trigger events), then `set_reminder_rule`, `set_host_reminder_rule` (email only, `event_created` only), `set_recontact_rule` | `list_reminder_rules`, `list_host_reminder_rules`, `list_recontact_rules` |
+| Meeting type (one per appointment agent) | `create_meeting_type` (returns `status: "existing"` when one exists; `MULTIPLE_MEETING_TYPES` when several) / `update_meeting_type` (incl. `is_active`) / `delete_meeting_type` (never the last one) | `list_meeting_types` |
+| Hosts (executives) | `add_executive({ workflow_id, user_id, meeting_type_ids? })` / `update_executive` (replaces the full `meeting_type_ids` set) / `remove_executive`; `auto_assign_solo_host` when one member is eligible | `list_executives` |
+| Host availability | `set_host_schedule` (complete weekly `slots`, host timezone), `set_host_timezone`, `set_host_blocks({ add, remove })` | `get_host_availability` |
+| Host calendar — **human step** | `connect_calendar({ user_id, provider })` → `connect_url` the host opens; `disconnect_calendar({ connection_id, confirm })` | `get_calendar_connections` (`status: "active"`), `get_integration_status.calendars[]` |
+| Host routing (enforced) | `set_meeting_type_routing({ agent_selection_rules })`; `null` clears. Prose preference: `update_meeting_type({ agent_selection_criteria })` | the tool's read-back; `list_meeting_types` |
+| Booking settings | `set_default_attendees`, `set_meeting_confirmation_email` (after `preview_meeting_confirmation_email`), `set_host_assigner` (+ `test_host_assigner`) | `get_workflow_booking_settings`, `get_meeting_confirmation_email` |
+| Client-owned booker | `set_external_booking` — `tool`, `reschedule_tool`, `cancel_tool` all required; `null` clears. **Never** through `update_workflow_config` | the tool's read-back, `get_integration_status.booking_providers[]` |
+| Calendly | `connect_calendly` (human step) → `set_calendly_host_mode` → `map_calendly_hosts` → `set_calendly_binding` per host → `provision_calendly`; `disconnect_calendly({ confirm })` | `get_calendly_status`, `list_calendly_bindings`, `list_calendly_event_types` |
+| Operator meeting operations | `book_meeting` (`idempotency_key`, `confirm`), `reschedule_meeting`, `change_meeting_host`, `cancel_meeting` — preview without `confirm: true`; `set_meeting_status({ status: "no_show" \| "completed" })` | `list_meetings`, `list_lead_meetings`, `get_meeting_stats`, `get_workflow_slots` |
+| CRM connection | `connect_crm({ provider: "hubspot" \| "zoho" \| "kommo" \| "gohighlevel" })` → `connect_url` or hosted token form (human step); `disconnect_crm` | `get_crm_connection_status`, `get_integration_status` |
 | Status timeout | `set_status_timeout_rule` | `list_status_timeout_rules` |
 | Knowledge assignment | `attach_knowledge_base` / `detach_knowledge_base` | `list_knowledge_bases({ workflow_id })` |
 | Cohort automation | `create_background_job` / `update_background_job` | `get_background_job` |
@@ -117,7 +127,7 @@ Deleting an agent group is relationship-only: it removes the group and clears ea
 3. `update_workflow_status` — only for later edits, or for `transfer_config` targets that did not exist yet at create time.
 4. Tools — `create_workflow_tool` / `configure_customer_api_tool`, then `set_workflow_tool_execution` or `set_tool_stage_gate`.
 5. `update_workflow_config` — `status_automations` and behavior flags. Tools must exist first: an automation references a tool **by name**.
-6. Webhooks, rules, jobs, functions, knowledge bases.
+6. Webhooks, rules, jobs, functions, knowledge bases. For an appointment agent the rules step expands to the booking path — meeting type → hosts → availability → calendar (human step) → `get_reminder_catalog` → reminders → routing — in [booking-agent.md](booking-agent.md#2-the-ordered-path).
 7. **Transfers last** — `update_workflow_status(..., transfer_config)` once every target agent has a real id.
 8. Read everything back, then `set_workflow_active`.
 
@@ -163,6 +173,7 @@ Do not design a configuration that depends on these; the write will be rejected 
 - **`futurology_queue`** — no MCP parameter. A "park and recontact later" bucket must be built from a non-terminal status plus a recontact rule or background job, or configured in the dashboard.
 - **Raw `sort_order` edits on an existing pipeline.** Set initial order through `create_workflow`; later order changes go through `reorder_workflow_statuses`, which protects the semantic head and rewrites the complete tail contiguously.
 - **`channels` and pause state are not `update_workflow` parameters.** `update_workflow` covers name, description, `goal_statement`, the agent identity (`language`, `timezone`, `region_style`, `agent_name`, `agent_role`, `company_name`, `begin_message`) and `master_workflow_id` — but the channel mix lives in the channel-binding tools (`assign_whatsapp_to_workflow`, `config.email_sender_id`, `assign_number_to_workflow`, `set_number_sms`) plus `config.disabled_channels`, and pausing/activating is `set_workflow_active`. A call carrying only a `workflow_id` (or only unaccepted keys) fails `INVALID_INPUT`; always include at least one accepted field. SMS is not provisioned like the others: it is activated per agent with `set_number_sms({ number_id, enabled: true, sms_workflow_id })` on a phone number the account already has (a Twilio-carrier number; Telnyx cannot carry SMS), so it needs no buy-a-number step when an active Twilio number already exists.
+- **Runtime agent tools.** `get_available_slots`, `confirm_and_book`, `create_event`, `reschedule_event`, `cancel_event`, `request_channel_swap`, `schedule_followup`, `save_field` and `patch_metadata` are built into the conversational agent and are **not callable over MCP** — there is no tool definition for them in your context and `list_workflow_tools` does not list them. They are named in configuration only as gate targets (`available_in_statuses`) or as entries in `disabled_builtin_tools` for an external booker. The operator-side equivalents are `book_meeting`, `reschedule_meeting`, `change_meeting_host`, `cancel_meeting` and `update_lead`.
 - **Most workflow-field properties after creation.** `create_workflow.fields[]` accepts arbitrary properties, but `update_workflow_structure.fields[]` accepts **only** `key`, `label`, `type`, `required`, `sort_order`. So `metadata_key`, `intake_value_map`, `extraction_hints`, `options`, `validation`, and `description` are reachable **only in the initial `create_workflow` call**.
 
   **This is a Law 1 constraint with teeth:** the metadata → field bridge (`metadata_key`) and select-field `options` must be part of the variable ledger *before* you create the agent. Getting them wrong means recreating the agent or finishing in the dashboard. Write the complete `fields` array on the first call.
@@ -179,7 +190,8 @@ Do not design a configuration that depends on these; the write will be rejected 
   - `workflows.is_paused` — the agent is off. Set by `set_workflow_active`. All new agents start here.
   - `workflow_runs.is_paused` — one lead's run is paused. Set by `stop_automation`. This is what background-job `exclusions.skip_paused` filters on.
   - status `pause_bot` — the agent goes quiet while the lead sits in that status. **Does not set `workflow_runs.is_paused`**, so a background job with `skip_paused: true` still processes these leads. That is precisely why the Law 3 pause boundary works: the job executing the handoff can still see the parked lead.
-- **Appointment workflows cannot activate without at least one active meeting type** (`list_meeting_types` / `update_meeting_type`).
+- **Appointment workflows need more than an active meeting type to book.** `set_workflow_active` succeeds with no host, no availability and no calendar; the agent then offers nothing. `get_account_readiness` lists the blockers per agent (`MEETING_TYPE_REQUIRED`, `BOOKING_AVAILABILITY_REQUIRED`, `CALENDLY_BINDING_REQUIRED`) with `fix_tools`; `get_workflow_slots` is the probe that proves the path is complete.
+- **`set_reminder_rule` has no reschedule trigger.** The dispatched events are `event_created` (re-fired for the new time after a reschedule), `event_cancelled`, `call_analyzed` (post-call, not post-meeting) and `event_enrolled`; `get_reminder_catalog` is the source of truth and also says which channels this account can use. A hand-typed value that is not in the catalog is a rule that never fires.
 
 ---
 
@@ -201,5 +213,8 @@ Preview and dry-run tools exist for nearly every risky primitive. Using them is 
 | Transfer edges | `get_workflow` on each source | `transfer_config.target_workflow_id` equals the real target id |
 | Knowledge assignment | `list_knowledge_bases({ workflow_id })` | Exact id set and priority order |
 | Stage gate | Call the tool before and after the gating status | `tool_not_available_in_stage`, then success |
+| Booking readiness | `get_account_readiness` → the agent's `booking` block; `get_integration_status.calendars[]` | Zero blockers, no `fix_tools`, every host calendar `active` |
+| Slots exist | `get_workflow_slots({ workflow_id, from, to })` | Non-empty for every host over the next week |
+| A real booking round-trips | `book_meeting({ …, confirm: true })` on a test lead → `list_meetings` → `cancel_meeting({ confirm: true })` | Host, time in the workflow timezone and meeting link present; the cancel removes it on the provider |
 
 `run_background_job` executes even an inactive job, and `run_scheduled_function` requires `confirm` because manual runs apply **real** effects. A successful manual run never proves the schedule is on — check `is_active` separately.

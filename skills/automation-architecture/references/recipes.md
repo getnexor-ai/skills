@@ -24,6 +24,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 18. [“Create two agents using the account’s existing channels”](#18-create-two-agents-using-the-accounts-existing-channels)
 19. [Build a two-agent system end to end, from brief to live](#19-build-a-two-agent-system-end-to-end-from-brief-to-live)
 20. [“Change the agent's call voice — make it male / female / a specific voice”](#20-change-the-agents-call-voice--make-it-male--female--a-specific-voice)
+21. [Build a bookable appointment agent on a fresh account](#21-build-a-bookable-appointment-agent-on-a-fresh-account)
 
 ---
 
@@ -238,9 +239,25 @@ Handoff messaging is composed automatically (contextual transition when the mess
 
 ## 7. “Remind the lead before the meeting”
 
-**Primitive:** rules. Two reminder rules on the meeting start time (e.g. −1440 and −180 minutes). Nothing else — not a cron, not a function. Host notifications ("tell the rep when a meeting books") are also rules; only "notify our *system*" needs a webhook on `meeting.created`.
+**Primitive:** rules. Nothing else — not a cron, not a function. Host notifications ("tell the rep when a meeting books") are also rules; only "notify our *system*" needs a webhook on `meeting.created`.
 
-**Rejected rungs:** a cron job or function re-derives timing the rules engine already owns — pure maintenance with no new capability.
+1. `get_reminder_catalog({ workflow_id })` — which channels this account can use (`available_for_account`), which trigger events are dispatched, and the default templates. Propose only channels it marks available.
+2. `list_reminder_rules({ workflow_id })` — dedupe on `trigger_event + channel + delay_minutes`.
+3. For each WhatsApp rule, resolve an APPROVED template by intent (`sync_whatsapp_templates` → `list_whatsapp_templates({ status: "APPROVED" })`); when none matches, draft one (`review_whatsapp_template_drafts` → `create_whatsapp_templates_batch`) and create the rule `is_active: false` until Meta approves. Never reuse an opening/cold-contact template.
+4. Present the whole set once, then write it after approval:
+
+```json
+[
+  { "trigger_event": "event_created", "channel": "whatsapp", "template_name": "meeting_confirmation", "delay_minutes": 0,     "delay_reference": "trigger",     "workflow_id": "<id>", "name": "Confirmation" },
+  { "trigger_event": "event_created", "channel": "whatsapp", "template_name": "meeting_reminder",     "delay_minutes": -1440, "delay_reference": "event_start", "workflow_id": "<id>", "name": "24h before" },
+  { "trigger_event": "event_created", "channel": "whatsapp", "template_name": "meeting_reminder",     "delay_minutes": -120,  "delay_reference": "event_start", "workflow_id": "<id>", "name": "2h before" },
+  { "trigger_event": "event_created", "channel": "retell",   "template_name": "notification_10min",   "delay_minutes": -10,   "delay_reference": "event_start", "workflow_id": "<id>", "name": "Call 10 min before" }
+]
+```
+
+Each row is one `set_reminder_rule` call. `delay_minutes` is signed; `delay_reference: "event_start"` counts from the meeting, `"trigger"` from the booking. There is no reschedule trigger — `event_created` fires again for the new time. A rep notification is `set_host_reminder_rule({ trigger_event: "event_created", channel: "email", template_name: "default", workflow_id })`; host cancellation/reschedule alerts are on by default. Full contract: [booking-agent.md §5](booking-agent.md#5-reminders--the-full-contract).
+
+**Rejected rungs:** a cron job or function re-derives timing the rules engine already owns — pure maintenance with no new capability; a channel the catalog marks unavailable is a rule that never sends.
 
 ---
 
@@ -361,6 +378,8 @@ First check who owns the rotation: if "round robin" just means distributing lead
   }
 ]
 ```
+
+   `get_available_slots` and `create_event` are runtime agent tools — not callable over MCP. They appear here only because `available_in_statuses` gates them exactly like a client tool; you never invoke them yourself. If the client's endpoint should pick the host for Nexor's own booking instead of running its own booker, `set_host_assigner({ workflow_id, tool: "assign_sales_rep", id_field: "rep_id", external_key: "<crm key>" })` is the native shape — see [booking-agent.md §6](booking-agent.md#6-host-routing).
 
 5. Booking here depends on the assigned representative, so gate availability and booking to `assignment_ready`, not merely `qualified` — and make the transition structural. A status automation can only run a tool; it cannot move the lead. Two working shapes:
    - Keep the status automation as the caller; a post-tool hook persists `assignment_id` to `metadata.sales_assignment_id`, and a cloud function on `lead.updated` guarded on that key moves the lead to `assignment_ready`.
@@ -505,7 +524,7 @@ If the handover must wait on something outside the conversation (a human review,
 
 Suppose the account has one WhatsApp number and one active call route assigned to a distinct legacy **Intake** workflow, two send-capable email senders, and that phone's SMS route is unassigned. The customer asks to create two new agents: **Qualifier** and **Closer**.
 
-1. Run `inspectAccountChannels`. Use its saved timezone. Never ask whether the account already has those channels.
+1. Run `get_account_readiness`, then `list_whatsapp_numbers`, `list_email_senders` and `list_phone_numbers`. Use the saved timezone. Never ask whether the account already has those channels.
 2. Build one allocation table before any mutation:
 
 ```json
@@ -539,7 +558,8 @@ The same physical phone id is valid here because call and SMS have independent o
 describe_agent_configuration          # the platform's own current surface map + required process
 list_workflows / get_workflow         # what already exists; reuse before creating
 list_client_tools, list_webhooks, list_knowledge_bases({})
-inspectAccountChannels                # saved timezone + real channel resources (recipe 18)
+get_account_readiness                 # saved timezone, blockers, next tools
+list_whatsapp_numbers, list_email_senders, list_phone_numbers   # real channel resources (recipe 18)
 ```
 
 ### Phase 2 — decompose with the three laws
@@ -663,3 +683,70 @@ You can switch and tune in one call: `set_workflow_voice(workflow_id, gender:"ma
 **Failure modes to surface, not swallow:** an unknown `voice_id` or a gender with no match in the workflow's language returns `INVALID_VOICE` with `available_voices`. Do not silently fall back — tell the user the catalog has no such voice for their language, list what is available (with preview URLs), and offer to add one via the add-language flow.
 
 **Rejected rungs:** a prompt line asking the agent to "sound male" (speech, not the TTS voice); setting only the grammatical gender field (changes es/pt self-reference wording, never the voice); hand-writing `ai_config.voice.voice_id` (the call runtime reads top-level `ai_config.voice_id`, so a nested-only write is ignored — the exact bug this tool now prevents).
+
+---
+
+## 21. Build a bookable appointment agent on a fresh account
+
+**Primitive:** the booking path — agent config + meeting type + hosts + availability + calendar + rules. Brief: *"An agent that books 30-minute video demos with our two sales reps, with WhatsApp reminders."* Full contracts in [booking-agent.md](booking-agent.md).
+
+### Phase 1 — orient (no mutations)
+
+```
+get_account_readiness                  # timezone, team, existing agents, per-agent booking blockers
+list_team                              # user_id of each rep
+get_integration_status                 # calendars[] and booking_providers[] — who is already connected
+get_reminder_catalog                   # which reminder channels this account can use
+```
+
+### Phase 2 — plan and review
+
+Plan the appointment agent with its booking block, then `review_agent_system_plan`; it refuses the plan until `meeting_type`, `hosts[]` and a calendar plan are present:
+
+```json
+{ "agents": [{
+  "ref": "demo_booker", "name": "Demo booker", "goal_type": "appointment",
+  "primary_responsibility": "Qualify interest and book a 30-minute demo.",
+  "language": "en-US", "timezone": "America/New_York", "channels": ["whatsapp"],
+  "statuses": [
+    { "key": "new", "is_initial": true },
+    { "key": "demo_booked", "entry_hint": "A demo slot has been confirmed with the lead — place the lead here.", "is_booking_target": true }
+  ],
+  "meeting_type": { "name": "Demo", "duration_minutes": 30, "location_type": "video", "video_provider": "google_meet" },
+  "hosts": [{ "user_id": "<rep-1>" }, { "user_id": "<rep-2>" }],
+  "calendar_plan": { "provider": "google" },
+  "activate": false
+}], "open_questions": [] }
+```
+
+Show the summary, ask the `signoff_prompt`, wait for the fingerprint approval.
+
+### Phase 3 — build, in dependency order (agent stays paused)
+
+```
+create_workflow({ goal_type:"appointment", timezone:"America/New_York", language:"en-US", statuses, fields })
+create_meeting_type({ workflow_id, name:"Demo", duration_minutes:30, location_type:"video", video_provider:"google_meet" })
+add_executive({ workflow_id, user_id:"<rep-1>" })            # and rep-2
+set_host_schedule({ user_id:"<rep-1>", timezone:"America/New_York",
+                    slots:[{ weekday:1, start:"09:00", end:"17:00" }, …] })   # and rep-2
+connect_calendar({ user_id:"<rep-1>", provider:"google", confirm:true })     # → connect_url — send it to rep-1
+connect_calendar({ user_id:"<rep-2>", provider:"google", confirm:true })     # → connect_url — send it to rep-2
+set_reminder_rule(…)                                          # the recipe-7 set, channels the catalog allows
+set_host_reminder_rule({ trigger_event:"event_created", channel:"email", template_name:"default", workflow_id })
+set_meeting_type_routing({ workflow_id, agent_selection_rules:{ routing:"cycle", tiers:[{ agents:["<rep-1>","<rep-2>"], mode:"round_robin" }] } })
+```
+
+The calendar step is the human one: say exactly who must open which link, then poll `get_calendar_connections({ user_id })` for each rep until `status: "active"`. Do not proceed to activation on a promise.
+
+### Phase 4 — read back, then activate separately
+
+```
+get_account_readiness            # the agent's booking block: zero blockers, no fix_tools
+get_integration_status           # calendars[] both active
+list_executives, get_host_availability, list_reminder_rules, list_meeting_types
+get_workflow_slots({ workflow_id, from:"<today>", to:"<today+7d>" })   # non-empty for both hosts
+```
+
+Only then, after a separate confirmation, `set_workflow_active`. Prove it with one `book_meeting({ …, idempotency_key, confirm:true })` on a test lead, `list_meetings`, and `cancel_meeting({ meeting_id, confirm:true })`.
+
+**Rejected rungs:** activating on `create_meeting_type` alone (no host, no slots — the agent offers nothing and says so to every lead); asking the reps to "share their calendar" instead of sending the `connect_url` (there is no other way in); a reminder on a channel the catalog marks unavailable; writing routing as prompt prose when `set_meeting_type_routing` enforces it; calling `get_available_slots` or `confirm_and_book` from here — they are runtime tools, not callable over MCP.

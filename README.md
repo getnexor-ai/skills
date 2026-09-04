@@ -143,7 +143,25 @@ Before adding a skill to the catalog:
 1. Create `skills/<skill-name>/SKILL.md` using the format above.
 2. Add only the scripts, references, assets, and UI metadata the skill requires.
 3. Add the skill to the appropriate plugin in [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json).
-4. Run `npm run check`.
+4. Run `npm run lint`, `npm test`, and `npm run check`.
+
+### Tool names are validated against the MCP
+
+`npm run check` (also `prepublishOnly` and the CI gate) rejects any snake_case identifier in inline code that is not a real Nexor MCP tool. The truth is `docs/mcp-tool-manifest.json`, generated from the public MCP server's source; non-tool tokens (field names, status keys, error codes) live in `docs/tool-name-allowlist.json`, and runtime agent tools (`get_available_slots`, `confirm_and_book`, …) may only be named in a file that states they are "not callable over MCP". Relative links and their `#anchors` must resolve too.
+
+Regenerate the manifest whenever the MCP adds or removes a tool:
+
+```bash
+npm run manifest -- /path/to/nexor-mcp-public              # working tree
+npm run manifest -- /path/to/nexor-mcp-public --ref origin/main   # union with a git ref
+npm run manifest -- /path/to/nexor-mcp-public --check      # exit 1 if stale
+```
+
+Names announced by in-flight MCP work go under `pending` in the manifest; the generator promotes them to `tools` once the source declares them.
+
+## Repository
+
+This is the canonical repository (`getnexor-ai/skills`). CI runs lint, tests, and the prepublish check on every pull request; every push to `main` publishes to npm as `@nexor/skills`.
 
 ## License
 
