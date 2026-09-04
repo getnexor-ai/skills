@@ -382,6 +382,19 @@
     "workflow_runs",
     "workflow_scoped",
     "workflow_tools",
-    "workflow_transfer"
+    "workflow_transfer",
+    "accept_charge",
+    "external_billing",
+    "image_url",
+    "imessage_consent_required",
+    "imessage_no_payment_method",
+    "imessage_no_subscription",
+    "imessage_purchase_disabled",
+    "no_payment_method",
+    "no_subscription",
+    "payment_link_missing",
+    "purchase_disabled",
+    "ready_to_pay",
+    "trial_not_allowed"
   ]
 }
