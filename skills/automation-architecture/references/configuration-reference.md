@@ -100,7 +100,14 @@ Status keys starting with `future_`, or exactly `contact_later` / `colder`, are 
 
 ### Status timeouts
 
-`timeout_config: { timeout: <n>, unit: "minutes"|"hours"|"days", target_status_key: "<key>" }` moves leads that stagnate in a status. `target_status_key` must be a status **in the same workflow** — this is the platform's only status→status pointer (transfers cannot aim at a specific status in another agent, see §9). If the target status is terminal and carries `transfer_config`, the transfer fires. Leads with an upcoming meeting are protected from terminal timeouts; leads in human support and paused workflows are skipped.
+`timeout_config: { timeout: <n>, unit: "minutes"|"hours"|"days", target_status_key: "<key>" }` is **the delay primitive**: after `timeout` in the status, the lead moves to `target_status_key`. It is exactly what the dashboard writes for **"If the lead does not reply → After N hrs → Move to"** on a stage (the UI offers hours only; the API also takes minutes and days — any other unit is silently read as hours). Write it with `set_status_timeout_rule`, or inline through `update_workflow_status` / `create_workflow`; read it back with `list_status_timeout_rules`.
+
+- **Clock.** Time since the lead *entered* the status (`status_changed_at`), 24/7, scanned every 2 minutes. A reply does **not** reset it — only a status change does — so a waiting status must be one the agent leaves when the lead writes back (entry hints on the active stages), or a live conversation gets timed out.
+- **Where it lives.** Any non-terminal, non-goal status; it is inert on a terminal or goal stage, so the wait always sits on the status *before* the exit. `target_status_key` must be a status **in the same workflow** — this is the platform's only status→status pointer (transfers cannot aim at a specific status in another agent, see §9). The three core stages accept it (`contacted --72h--> …` is the usual "never replied" exit).
+- **Delayed handoff.** Aim it at a terminal status that carries `transfer_config` and the transfer fires on arrival. **Chain** statuses for multi-step waits — each hop has its own timeout and each timer starts on entry: `engaged --4h--> silent_4h --8h--> silent_12h --…--> handoff_followup (terminal → follow-up agent)`. Recipe 23.
+- **Skipped.** Leads in human support, paused runs/agents, sandbox runs — and a *terminal* target while the lead has an upcoming meeting.
+
+Never model a per-lead wait with a scheduled function, cloud function, background job or recontact `on_exhausted`: none of them can transfer, none is visible in the stage editor, and all of them duplicate a timer the platform already runs.
 
 ### Native member assignment (`assignment_config`)
 
@@ -454,7 +461,7 @@ Auto-transfer is additionally skipped while the lead is in human support (`in_su
 | Status config | `is_terminal: true` + `transfer_config`, key not soft-terminal | `pause_bot: true`, no auto-fire |
 | Who executes the transfer | The platform, on entry to the status | You must name it: background-job `workflow_transfer` / `force_transfer`, the one-off transfer API, or a human operator |
 | Source run | Deactivated with outcome `transferred` | Stays live but silent until the executor runs |
-| Use when | The routing criterion is fully known at the boundary | The handoff needs cohort timing, a human decision, or an external signal that has not arrived yet |
+| Use when | The routing criterion is fully known at the boundary — including *elapsed time*: put `timeout_config` on the waiting status and aim it at this terminal status | A human decision or an external signal that has not arrived yet. Not a wait: elapsed time is a status timeout, never a pause + job |
 
 Terminal is the default; reach for the pause shape only when something outside the conversation must decide. A pause boundary without a named executor leaves the lead parked and silent indefinitely — verify the executor moves a test lead before activating. The pause shape is structurally safe: status `pause_bot` does not set `workflow_runs.is_paused`, so a background job carrying the standard `exclusions: { skip_paused: true }` still selects these leads.
 
