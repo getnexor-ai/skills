@@ -26,6 +26,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 20. [“Change the agent's call voice — make it male / female / a specific voice”](#20-change-the-agents-call-voice--make-it-male--female--a-specific-voice)
 21. [Build a bookable appointment agent on a fresh account](#21-build-a-bookable-appointment-agent-on-a-fresh-account)
 22. [“Once the lead says yes, a payment agent sends the link”](#22-once-the-lead-says-yes-a-payment-agent-sends-the-link)
+23. [“If they go quiet for N hours, follow up, then hand them to the follow-up agent”](#23-if-they-go-quiet-for-n-hours-follow-up-then-hand-them-to-the-follow-up-agent)
 
 ---
 
@@ -301,6 +302,8 @@ Each row is one `set_reminder_rule` call. `delay_minutes` is signed; `delay_refe
 
 Statuses meant for parking should be `futurology_queue` buckets so booked/won leads can't be demoted into them.
 
+A wait measured from *entering a stage* ("after 3 days in Proposal sent…") is not a stored date and not this recipe: it is `timeout_config` on that stage (recipe 23).
+
 ---
 
 ## 11. “Enrich every new lead from an external API”
@@ -511,7 +514,7 @@ The emphasis shift belongs in that status's `entry_hint` and in per-status promp
 
 The closing tone, the booking tools, and the higher-intensity cadence now live on `<closer-agent-id>`, not in a paragraph. Instruct the closer to read budget from the transfer chain rather than re-asking — transferred fields are a read-only snapshot, not copied into its own fields. Write the boundary silently on the source: when the criterion is met it moves the lead and ends its turn, with no hand-off dialogue; the closer speaks next from its own arrival rule (recipe 21 shows the payment-link variant).
 
-If the handover must wait on something outside the conversation (a human review, a nightly batch, an external signal), use the pause boundary instead: `pause_bot: true` on the status and a background job with the `workflow_transfer` action as the named executor. A pause boundary with no executor parks the lead silently forever.
+If the handover must wait on *elapsed time* ("48h with no reply, then hand over"), that is still the terminal shape: `timeout_config` on the waiting status aimed at the terminal transfer status (recipe 23). Only when it must wait on something outside the conversation (a human review, a nightly batch, an external signal) use the pause boundary instead: `pause_bot: true` on the status and a background job with the `workflow_transfer` action as the named executor. A pause boundary with no executor parks the lead silently forever.
 
 **Step 3 — verify structurally, not conversationally.** Before the boundary, the closer-only tools must return `tool_not_available_in_stage`; after it, a fresh run must exist on the target agent at *its* initial status with the source run deactivated. A conversation that merely *sounds* like it switched proves nothing.
 
@@ -790,3 +793,39 @@ Only then, after a separate confirmation, `set_workflow_active`. Prove it with o
 **Editing either side later:** these two prompts are one contract. Before rewriting the source's closing behaviour or the payment agent's first message, read the other agent's relevant status and prompt (they share an agent group — read the group, not the single agent) so the boundary stays silent on one side and context-aware on the other.
 
 **Rejected rungs:** one agent whose prompt says "after they accept, send the link" when the payment side needs a different persona, tool set, or cadence (Law 3, recipe 17); a source prompt that "warms up" the transfer; a welcome job or automation aimed at transferred leads (the arrival message already speaks); the URL written into a prompt (`set_payment_link` is the only path the runtime reads).
+
+---
+
+## 23. “If they go quiet for N hours, follow up, then hand them to the follow-up agent”
+
+**Primitive:** status timeouts (`timeout_config`) chained across statuses of the same agent, ending in a terminal status that carries `transfer_config`. No code. This is exactly what the dashboard writes when the operator ticks **“If the lead does not reply → After N hrs → Move to”** on a stage and **“Continue with another agent”** on the terminal stage — so it is the first thing to reach for, and the one to name to the user.
+
+**Rejected rungs:** a scheduled function sweeping “leads silent for 4h” (re-implements the timer, invisible in the stage editor, cannot transfer without extra code); a background job with `workflow_transfer` (right only when a human or an external signal decides — §9 pause shape); recontact `on_exhausted` (it can only mark cold, pause or do nothing — it never transfers, and it cannot name a target status); a prompt line “after 24 hours move them to Follow up” (the agent has no clock between turns).
+
+**How the timer works — read before designing.** The clock is time since the lead *entered* the status (`status_changed_at`), 24/7, checked every 2 minutes. `unit` is `minutes | hours | days`; the dashboard shows hours only. A reply does **not** reset it — only a status change does. Leads in human support, paused runs/agents and sandbox runs are skipped; a terminal target is skipped while the lead has an upcoming meeting. The timeout is inert on a terminal status or the goal stage, so the wait always sits on the status *before* the exit.
+
+Two cases from the brief in the title:
+
+**Case A — never replied: nudge at 24h and 72h, then hand off.** The opener and its nudges are the outreach cadence (`set_workflow_cadence`: windows, `max_days`, touches per block); recontact rules are refused on `new` / `contacted` (409 `CADENCE_OWNED_STAGE`). The handoff is one timeout on `contacted` (a core stage; it accepts timeouts):
+
+```json
+set_status_timeout_rule({ "workflow_id": "<qualifier>", "status_key": "contacted", "timeout": 72, "unit": "hours", "target_status_key": "handoff_followup" })
+update_workflow_status({ "workflow_id": "<qualifier>", "status_key": "handoff_followup", "is_terminal": true, "transfer_config": { "target_workflow_id": "<follow-up agent>" } })
+```
+
+**Case B — replied, then went silent: touches at 4h, 12h, 24h, 48h, then hand off.** Unequal gaps mean one waiting status per gap; each `timeout` is the gap *from the previous hop*, not the cumulative figure:
+
+```text
+engaged --4h--> silent_4h --8h--> silent_12h --12h--> silent_24h --24h--> silent_48h --<final wait>--> handoff_followup (terminal, transfer_config → follow-up agent)
+```
+
+Build the chain in one `create_workflow` call (statuses carry `timeout_config` inline) or with one `set_status_timeout_rule` per hop; add `transfer_config` once the follow-up agent has a real id. The last hop's timeout is the answer to “how long after the final touch do we hand over” — ask the user for that number instead of inventing it.
+
+The status timeout moves the lead **silently**. For the touch at each hop choose one, in this order:
+
+1. **Hand off earlier and let the follow-up agent's cadence do the touches.** Different contact intensity is the textbook reason for a second agent (Law 3): `engaged --4h--> handoff_followup` and the follow-up agent's cadence/recontact policy owns 12h/24h/48h. Fewer moving parts, fully operator-visible.
+2. **Exact unequal gaps inside one agent:** one recontact rule per waiting status — `set_recontact_rule({ "workflow_id", "trigger_status_key": "silent_4h", "name": "Nudge 1", "stale_reference": "status_changed_at", "stale_after_hours": 1, "max_attempts": 1, "on_exhausted": "nothing", "prompt_hint": "<what this nudge says>" })`. `stale_after_hours` is at least 1, so the touch lands about an hour after the hop; shift the hop by that hour if the exact figure matters. Recontact already skips a lead who replied.
+
+**Non-negotiable in both cases:** a reply must take the lead *out* of the waiting statuses, or the chain hands off a live conversation. Write the active stage's `entry_hint` so the agent moves a lead who writes back out of `silent_*` (e.g. “the lead answered after a silence — resume here”), and keep the waiting statuses' own `entry_hint` limited to “no reply for N hours” so the agent never parks a talking lead there.
+
+**Verify:** `list_status_timeout_rules({ workflow_id })` shows every hop with the intended unit and target; `get_workflow_status(handoff_followup)` shows `is_terminal: true` and the `transfer_config`; drive one test lead into `silent_12h` with a short `unit: "minutes"` timeout, let it reply, and confirm the run is back on an active stage (no timeout fires); let another go quiet through the chain and confirm a fresh run exists on the follow-up agent at its initial status with the source run `transferred`. Restore the real hours before activation.
