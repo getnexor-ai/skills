@@ -16,6 +16,7 @@ The client-facing configuration surface for each primitive. Field names here are
 10. [Cadence: contact windows and outreach intensity](#10-cadence-contact-windows-and-outreach-intensity)
 11. [Knowledge bases: account catalog and per-agent assignment](#11-knowledge-bases-account-catalog-and-per-agent-assignment)
 12. [Account channel inventory and agent binding](#12-account-channel-inventory-and-agent-binding)
+13. [Conversions: counting the outcome and moving the lead](#13-conversions-counting-the-outcome-and-moving-the-lead)
 
 ---
 
@@ -638,3 +639,60 @@ When “configure another” is selected, suspend the build until a new real id 
 After workflow creation, apply each selected id and synchronize `config.disabled_channels` plus `first_contact_channel`. Repeat the inventory read and `get_workflow` for every new agent and every displaced existing agent. Disable a lost capability on the displaced agent or assign its separately confirmed replacement. Relationship cleanup uses these exact calls: `assign_whatsapp_to_workflow({ number_id })` omits the optional `workflow_id` to unbind; `update_workflow_config({ workflow_id, config: { email_sender_id: null } })` explicitly clears email (omitting the key in a merge preserves the stale sender); `set_number_sms({ number_id, enabled: true })` omits the optional `sms_workflow_id` when SMS should stay enabled but unowned; `assign_number_to_workflow({ number_id })` omits the optional `workflow_id` and makes call routing client-scoped, so use it only when that account-wide impact was explicitly approved. Completion requires exact binding and config equality for every requested channel. Enabling a channel in cadence without assigning a usable sender/number does not satisfy the manifest.
 
 For WhatsApp outreach, the `approved_openers` list above is the executable prerequisite inventory. It contains only `list_whatsapp_templates({ status: "APPROVED" })` rows whose `internal_type` is `greeting`, `opening`, `legacy_greeting`, or `outbound`. Require at least one real template id/name, configure the workflow's opening intent with `set_opening_templates({ workflow_id, mode, template_names })`, and read it back with `get_template_pool({ workflow_id })`. Activation is blocked until the selected opener remains approved and the observed opening pool matches.
+
+
+---
+
+## 13. Conversions: counting the outcome and moving the lead
+
+Nexor records a conversion by itself only for outcomes it observes: a meeting the agent booked, a payment taken through a Nexor payment link, a Shopify order, a HubSpot deal reaching a won stage. Every other outcome — a contract signed in a CRM, an order paid in a store or point of sale, an account opened, a plan activated, a first deposit — exists in Nexor only if that system sends a conversion event.
+
+### `POST /api/public/conversions` (MCP: `create_conversion`)
+
+Auth: `X-API-Key`. **Exactly one lead identifier is required and it is the only requirement.**
+
+| Field | Required | Notes |
+|---|---|---|
+| `lead_id` \| `lead_email` \| `lead_phone` | yes, exactly one | Must resolve to exactly one lead; no match or an ambiguous match is a 400 |
+| `conversion_type_id` | no | Labels the event with a named conversion and inherits its currency. Without it the event is *untyped* and still counts |
+| `amount` | no | Non-negative number. Without it no currency is stored |
+| `currency` | no | Explicit value > the type's currency > `USD` |
+| `description` | no | Free text, max 2,000 chars. `notes` is accepted as an alias; `description` wins if both are sent |
+| `metadata` | no | Free-form JSON object, any keys and values, stored as sent |
+| `converted_at`, `workflow_run_id` | no | Backfills, and attaching the event to a specific run of that lead |
+
+```json
+{ "lead_email": "ana@empresa.cl", "amount": 129000, "currency": "CLP",
+  "description": "Contrato firmado",
+  "metadata": { "deal_id": "SO-88213", "seller": "mcastro", "branch": "Providencia", "plan": "anual" } }
+```
+
+`metadata` is where every fact about the conversion belongs — deal id, product, seller, branch, plan, campaign, line items — not the description. It is shown on the lead, echoed in the `conversion.detected` cloud-function event, and filterable on the list.
+
+### `list_conversions`
+
+All filters are optional and only narrow; an unfiltered call returns typed and untyped events together.
+
+`lead_id`, `conversion_type_id` (the value `none` returns untyped events only), `workflow_id`, `master_workflow_id`, `metadata` (object; exact match on top-level keys), `limit`, `offset`. Over HTTP the metadata filter is the repeatable `metadata[key]=value` query parameter.
+
+This is the read-back for a wiring: after one real event, `list_conversions({ lead_id })` must return it. Nothing is "done" before that.
+
+### `set_conversion_destination`
+
+Where the lead goes when a conversion lands. One call per scope:
+
+```json
+set_conversion_destination({ "workflow_id": "<agent>", "destination_workflow_id": "<target agent>", "destination_status_key": "welcome" })
+set_conversion_destination({ "agent_group_id": "<group>", "destination_workflow_id": "<target agent>", "destination_status_key": "welcome" })
+set_conversion_destination({ "workflow_id": "<agent>", "destination_workflow_id": null, "destination_status_key": null })
+```
+
+Pass `null` destinations to clear. The status must belong to the destination agent and both must belong to the account; invalid pairs are rejected at save time and re-checked when a conversion arrives. Selecting the same agent as destination is allowed — it is a status change.
+
+**Precedence, first match wins:** the conversion type's destination (typed events only) > the destination on the agent running the lead > the destination on that agent's group > none, in which case the event is still recorded and the lead stays where it is. Nothing is inferred from "the account only has one agent".
+
+Read it back with `get_workflow` or `list_workflows`, which return `conversion_destination: { workflow_id, workflow_name, status_id, status_key, status_label, source: "own" | "group" } | null` — `source` tells you whether the agent has its own destination or is inheriting the group's.
+
+### Named conversion types are optional
+
+`set_conversion_type` still defines a named conversion for reporting by name and a default currency (`list_conversion_types` reads them). It is never a prerequisite for sending an event: untyped events count, move the lead, appear on the Conversions page in their own row, and can be given a type later.
