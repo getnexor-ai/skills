@@ -659,13 +659,17 @@ Auth: `X-API-Key`. **Exactly one lead identifier is required and it is the only 
 | `currency` | no | Explicit value > the type's currency > `USD` |
 | `description` | no | Free text, max 2,000 chars. `notes` is accepted as an alias; `description` wins if both are sent |
 | `metadata` | no | Free-form JSON object, any keys and values, stored as sent |
-| `converted_at`, `workflow_run_id` | no | Backfills, and attaching the event to a specific run of that lead |
+| `workflow_id` | no | Credit this agent (and its group). Beats the type's scope and the lead's active agent |
+| `master_workflow_id` | no | Alone (no `workflow_id`): a **group-level** conversion — no agent credited, the lead's active agent is not consulted, the group's own destination applies |
+| `converted_at`, `workflow_run_id` | no | Backfills, and noting which run of that lead triggered it. `workflow_run_id` is provenance only: it never changes who is credited |
 
 ```json
 { "lead_email": "ana@empresa.cl", "amount": 129000, "currency": "CLP",
   "description": "Contrato firmado",
   "metadata": { "deal_id": "SO-88213", "seller": "mcastro", "branch": "Providencia", "plan": "anual" } }
 ```
+
+Credit precedence: explicit `workflow_id`/`master_workflow_id` > the conversion type's scope > the lead's active agent. Use `master_workflow_id` alone when the sale belongs to the team rather than to one agent; group reports then show it under the group total, apart from agent-credited conversions.
 
 `metadata` is where every fact about the conversion belongs — deal id, product, seller, branch, plan, campaign, line items — not the description. It is shown on the lead, echoed in the `conversion.detected` cloud-function event, and filterable on the list.
 
