@@ -283,5 +283,7 @@
     "verify_email_domain",
     "whoami"
   ],
-  "pending": []
+  "pending": [
+    "set_conversion_destination"
+  ]
 }

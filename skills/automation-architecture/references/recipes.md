@@ -27,6 +27,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 21. [Build a bookable appointment agent on a fresh account](#21-build-a-bookable-appointment-agent-on-a-fresh-account)
 22. [“Once the lead says yes, a payment agent sends the link”](#22-once-the-lead-says-yes-a-payment-agent-sends-the-link)
 23. [“If they go quiet for N hours, follow up, then hand them to the follow-up agent”](#23-if-they-go-quiet-for-n-hours-follow-up-then-hand-them-to-the-follow-up-agent)
+24. [“The deal closes in our CRM — count it in Nexor”](#24-the-deal-closes-in-our-crm--count-it-in-nexor)
 
 ---
 
@@ -829,3 +830,46 @@ The status timeout moves the lead **silently**. For the touch at each hop choose
 **Non-negotiable in both cases:** a reply must take the lead *out* of the waiting statuses, or the chain hands off a live conversation. Write the active stage's `entry_hint` so the agent moves a lead who writes back out of `silent_*` (e.g. “the lead answered after a silence — resume here”), and keep the waiting statuses' own `entry_hint` limited to “no reply for N hours” so the agent never parks a talking lead there.
 
 **Verify:** `list_status_timeout_rules({ workflow_id })` shows every hop with the intended unit and target; `get_workflow_status(handoff_followup)` shows `is_terminal: true` and the `transfer_config`; drive one test lead into `silent_12h` with a short `unit: "minutes"` timeout, let it reply, and confirm the run is back on an active stage (no timeout fires); let another go quiet through the chain and confirm a fresh run exists on the follow-up agent at its initial status with the source run `transferred`. Restore the real hours before activation.
+
+
+---
+
+## 24. “The deal closes in our CRM — count it in Nexor”
+
+**Primitive:** a conversion event posted by the system that owns the outcome (`POST /api/public/conversions`, `create_conversion` over MCP), plus `set_conversion_destination` on the source agent so the lead moves when one arrives. No code on the Nexor side.
+
+**Rejected rungs:** counting it in the prompt (“when they say they signed, mark it”) — the agent is not in that conversation and the signature happens days later, elsewhere; an inbound lead webhook (it upserts a lead, it does not record an outcome); an outbound webhook (that is Nexor telling them, the direction is reversed); a scheduled function *first* (correct only when their system cannot make any outgoing call — see below).
+
+**Applies to** every goal that is not booking a meeting or collecting a Nexor payment link: qualification, information, support, document collection, quote, sale, custom. The agent qualifies, a human or another system closes, and without this the account reports zero conversions while the business is closing every week.
+
+**Ask exactly two things.** Which system knows the moment of conversion, and how that system identifies the person: the email, the phone, or the Nexor `lead_id` it stored from an outbound webhook or the leads API response. Do not ask what to put in `metadata` — propose keys from what the customer already said (deal id, product, seller, branch, plan) and let them trim.
+
+**1. Set the destination first**, so the lead lands somewhere the moment the first real event arrives:
+
+```json
+set_conversion_destination({ "workflow_id": "<qualifier>", "destination_workflow_id": "<onboarding>", "destination_status_key": "welcome" })
+```
+
+Use `agent_group_id` instead of `workflow_id` when every agent in the group should share the fallback. A named conversion type is optional: add one with `set_conversion_type` only when the customer wants the events labelled by name in reports or a default currency — it is never a prerequisite.
+
+**2. The request their system sends** when the deal reaches its won stage (from the CRM's own webhook/automation, from a Zapier / Make / n8n HTTP step, or from their application):
+
+```http
+POST https://api.getnexor.ai/api/public/conversions
+X-API-Key: $NEXOR_API_KEY
+Content-Type: application/json
+
+{ "lead_email": "{{person.email}}",
+  "amount": {{deal.value}},
+  "currency": "CLP",
+  "description": "Contrato firmado",
+  "metadata": { "deal_id": "{{deal.id}}", "owner": "{{deal.owner}}", "product": "{{deal.product}}" } }
+```
+
+Only the lead identifier is required. Everything the business will want to slice by later goes in `metadata`, never inside the description: it is shown on the lead, delivered to cloud functions on `conversion.detected`, and filterable with `metadata[key]=value`.
+
+**3. When their system cannot call out at all**, invert the direction: a Scheduled Function on a cron that queries their API for deals closed since the last run and posts one conversion per lead. Same endpoint, same payload. Do not offer this when a webhook or a Zapier step is available — it adds a polling window and code to maintain.
+
+**Already covered without any of this:** a Shopify store (orders are recorded automatically) and HubSpot deal sync (a won deal emits the conversion). Confirm those, then ask whether any *other* outcome closes outside them.
+
+**Verify:** post one real event for a test lead, then `list_conversions({ lead_id: "<test lead>" })` must return it with the amount, description and metadata as sent; `get_workflow({ workflow_id: "<qualifier>" })` must read back `conversion_destination` with the expected agent and status and `source: "own"` (or `"group"` when the fallback is the group's); and the test lead must now have a fresh run on the destination agent. Until both read-backs pass, the wiring is pending, not done.
