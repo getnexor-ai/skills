@@ -424,6 +424,8 @@
     "workflow_runs",
     "workflow_scoped",
     "workflow_tools",
-    "workflow_transfer"
+    "workflow_transfer",
+    "contact_schedule",
+    "first_agent_setup"
   ]
 }
