@@ -28,6 +28,7 @@ Worked mappings. Start from the closest one, keep the shape, swap the domain val
 22. [“Once the lead says yes, a payment agent sends the link”](#22-once-the-lead-says-yes-a-payment-agent-sends-the-link)
 23. [“If they go quiet for N hours, follow up, then hand them to the follow-up agent”](#23-if-they-go-quiet-for-n-hours-follow-up-then-hand-them-to-the-follow-up-agent)
 24. [“The deal closes in our CRM — count it in Nexor”](#24-the-deal-closes-in-our-crm--count-it-in-nexor)
+25. [“Sell tickets on our ecommerce and follow up with a discount”](#25-sell-tickets-on-our-ecommerce-and-follow-up-with-a-discount)
 
 ---
 
@@ -85,9 +86,9 @@ Variants: filter `to_status.category equals won` for "any win"; add `workflow_id
 
 ## 3. “Sync leads in from our CRM / database every night”
 
-**Primitive:** scheduled function calling the public leads API. ("Syncing information into the system" is usually just the API; the scheduled function is the cron wrapper when the external system can't push.)
+**Primitive:** scheduled function calling the public leads API. ("Syncing information into Nexor" is usually just the API; the scheduled function is the cron wrapper when the external tool can't push.)
 
-- If the external system **can push** (webhooks, Zapier, forms): skip the function entirely — point it at `POST /api/public/leads` with an API key, or at a branded inbound hook URL if it can't set headers. Done.
+- If the external tool **can push** (webhooks, Zapier, forms): skip the function entirely — point it at `POST /api/public/leads` with an API key, or at a branded inbound hook URL if it can't set headers. Done.
 - If Nexor must **pull**, create a scheduled function (e.g. `0 2 * * *`, customer's timezone):
 
 ```js
@@ -117,7 +118,7 @@ The API upserts (email → phone match), shallow-merges metadata, and enrolls in
 
 **Primitive:** metadata at intake + `metadata_key` bridges. Whenever the customer says "the agent should know/use custom information about the lead," configure the intake through metadata.
 
-1. The sending system includes the data in the lead's `metadata` object on `POST /api/public/leads` (or via the inbound hook's `field_mapping`). The root is an object, while its customer-defined values may use any JSON shape:
+1. The sending external tool includes the data in the lead's `metadata` object on `POST /api/public/leads` (or via the inbound hook's `field_mapping`). The root is an object, while its customer-defined values may use any JSON shape:
 
 ```json
 {
@@ -236,13 +237,13 @@ Enable the client's re-engage agent before creating this rule. Ensure the nurtur
 6. Treat both handoffs as an expected connection manifest. After the source and both targets have real ids, update the source statuses even if the source was created first, then read the source back and prove `qualified_now → <sales-now-agent id>` and `qualified_later → <nurture-later-agent id>`. Repair and re-read any missing or misdirected edge before calling the system complete.
 7. Verify each branch with a raw conversation: `qualified_now` must create a fresh sales run and start the sales cadence; `qualified_later` must create a fresh nurture run with the biweekly rule. Confirm both targets read the transfer chain without asking for fit, need, or timeline again.
 
-Handoff messaging is composed automatically (contextual transition when the messaging window is open, otherwise the target's template cascade). Do **not** also aim a welcome job/automation at freshly transferred leads, and do **not** script hand-off dialogue on the source — the source moves the lead and ends its turn; the target speaks next (recipe 21). Apply the 80% test: if the two targets share nearly all prompt, tools, channels, and schedule, use one agent with more statuses instead.
+Handoff messaging is composed automatically (contextual transition when the messaging window is open, otherwise the target's template cascade). Do **not** also aim a welcome job/automation at freshly transferred leads, and do **not** script hand-off dialogue on the source — the source moves the lead and ends its turn; the target speaks next (recipe 22). Apply the 80% test within one intent only: if the two targets share the same intent and register and nearly all prompt, tools, channels, and schedule, use one mode with more statuses instead — never merge two different intents or registers into one mode.
 
 ---
 
 ## 7. “Remind the lead before the meeting”
 
-**Primitive:** rules. Nothing else — not a cron, not a function. Host notifications ("tell the rep when a meeting books") are also rules; only "notify our *system*" needs a webhook on `meeting.created`.
+**Primitive:** rules. Nothing else — not a cron, not a function. Host notifications ("tell the rep when a meeting books") are also rules; only "notify our *external API / CRM*" needs a webhook on `meeting.created`.
 
 1. `get_reminder_catalog({ workflow_id })` — which channels this account can use (`available_for_account`), which trigger events are dispatched, and the default templates. Propose only channels it marks available.
 2. `list_reminder_rules({ workflow_id })` — dedupe on `trigger_event + channel + delay_minutes`.
@@ -328,7 +329,7 @@ It fires on workflow entry, ahead of the first message, with no model decision a
 
 ## 12. “One sales conversation with contacted / qualified / booked stages”
 
-**Primitive:** one agent, statuses only. Three agents chained by transfers is the canonical mistake: every hop resets cadence, fragments conversation history, and re-triggers first-contact logic. Reserve transfers for genuinely different conversations (different goal, persona, cadence, or channel mix).
+**Primitive:** one mode, statuses only — because contacted / qualified / booked are one intent (close this sale) in one register. Splitting a *single* intent into three modes chained by transfers is the canonical mistake: every hop resets cadence, fragments conversation history, and re-triggers first-contact logic. This recipe is not a licence for one broad mode: the moment a second intent or register appears (a follow-up chase, a discount, a payment step) it becomes its own mode (recipes 22, 23, 25), and the default shape of an agent is 2–3 modes.
 
 ---
 
@@ -416,7 +417,7 @@ claim that assignment or booking succeeded.
 1. Put the discard rule in the status's `entry_hint` (e.g. `unqualified` — "Lead confirmed there is no budget / they are outside the service area — place the lead here."), with `variable_refs` + `requires_all_fields` when the rule depends on collected field values.
 2. Configure `category: "lost"` and `is_terminal: true`. Entering the status stops all proactive outbound (cadence and jobs skip the lead) and the run cannot be reactivated. The agent still replies briefly and kindly if the lead writes in — built-in lost-lead behavior: no selling, no booking offers. Add `pause_bot` only if the customer wants total silence, including to inbound messages. Encode the disqualifying condition in `transition_rules.rule_groups` with `auto_evaluate: true` when field values fully determine it.
 3. Do not confuse the neighbors: `pause_bot` is a hold (agent stops responding while a human reviews; the run stays live) and `futurology_queue` is a deferral (park now, recontact later — recipe 10). Only the terminal `lost` status discards. Avoid status keys starting with `future_` (or `contact_later` / `colder`) for a hard discard — those are soft terminals and recontact keeps running for them.
-4. If the customer's system must also know, attach a filtered webhook (recipe 1) or status automation (recipe 2) to the discard status.
+4. If the customer's CRM or external API must also know, attach a filtered webhook (recipe 1) or status automation (recipe 2) to the discard status.
 
 **Rejected rungs:** a background job that "deactivates unqualified leads" re-derives what the status already enforces; a prompt line saying "don't message unqualified leads" is speech, not structure — nothing stops the cadence.
 
@@ -476,7 +477,7 @@ Suppose the account owns `General Company FAQ`, `Qualification Policy`, and `Pri
 **Step 1 — run the discriminator.** What actually changes at the switch?
 
 - Only what is *known* about the lead changes; goal, persona, tools, channels, and cadence stay the same → **Law 2: one more status.**
-- Goal, prompt content, tool set, channel mix, or contact intensity changes → **Law 3: a second agent behind a boundary status.**
+- Goal, prompt content, tool set, channel mix, or contact intensity changes → **Law 3: a second mode behind a boundary status.** This is the default answer whenever the *intent* changes (informing → selling → chasing) or the *register* changes (friendly → insistent); the operator must explicitly ask for one single mode to keep it in one prompt (SKILL.md, "Default shape").
 
 **Step 2a — the status answer (Law 2).** Make the switch a stage of the same pipeline:
 
@@ -513,7 +514,7 @@ The emphasis shift belongs in that status's `entry_hint` and in per-status promp
 }
 ```
 
-The closing tone, the booking tools, and the higher-intensity cadence now live on `<closer-agent-id>`, not in a paragraph. Instruct the closer to read budget from the transfer chain rather than re-asking — transferred fields are a read-only snapshot, not copied into its own fields. Write the boundary silently on the source: when the criterion is met it moves the lead and ends its turn, with no hand-off dialogue; the closer speaks next from its own arrival rule (recipe 21 shows the payment-link variant).
+The closing tone, the booking tools, and the higher-intensity cadence now live on `<closer-agent-id>`, not in a paragraph. Instruct the closer to read budget from the transfer chain rather than re-asking — transferred fields are a read-only snapshot, not copied into its own fields. Write the boundary silently on the source: when the criterion is met it moves the lead and ends its turn, with no hand-off dialogue; the closer speaks next from its own arrival rule (recipe 22 shows the payment-link variant).
 
 If the handover must wait on *elapsed time* ("48h with no reply, then hand over"), that is still the terminal shape: `timeout_config` on the waiting status aimed at the terminal transfer status (recipe 23). Only when it must wait on something outside the conversation (a human review, a nightly batch, an external signal) use the pause boundary instead: `pause_bot: true` on the status and a background job with the `workflow_transfer` action as the named executor. A pause boundary with no executor parks the lead silently forever.
 
@@ -600,7 +601,7 @@ Two agents, because the closer differs in goal, prompt, tools, and cadence — n
   "open_questions": ["Confirm the closer's cadence intensity."] } } }
 ```
 
-Resolve every `blocking_issue` and `clarification_question`, then show the summary and ask the returned `signoff_prompt` verbatim. **No mutation happens before the user approves the `plan_fingerprint`.**
+Resolve every `blocking_issue` and `clarification_question`, then show the summary and close with "Does this look ok? Let me know and I'll build it." **No mutation happens before the user approves the summarized plan. The `plan_fingerprint` is internal: never show it or the word "fingerprint" to the user.**
 
 ### Phase 4 — build (agents are created paused)
 
@@ -724,7 +725,7 @@ Plan the appointment agent with its booking block, then `review_agent_system_pla
 }], "open_questions": [] }
 ```
 
-Show the summary, ask the `signoff_prompt`, wait for the fingerprint approval.
+Show the summary, close with "Does this look ok? Let me know and I'll build it.", wait for the user's approval (never show the `plan_fingerprint`).
 
 ### Phase 3 — build, in dependency order (agent stays paused)
 
@@ -836,13 +837,13 @@ The status timeout moves the lead **silently**. For the touch at each hop choose
 
 ## 24. “The deal closes in our CRM — count it in Nexor”
 
-**Primitive:** a conversion event posted by the system that owns the outcome (`POST /api/public/conversions`, `create_conversion` over MCP), plus `set_conversion_destination` on the source agent so the lead moves when one arrives. No code on the Nexor side.
+**Primitive:** a conversion event posted by the external tool that owns the outcome — their CRM, ERP or own backend — (`POST /api/public/conversions`, `create_conversion` over MCP), plus `set_conversion_destination` on the source agent so the lead moves when one arrives. No code on the Nexor side.
 
-**Rejected rungs:** counting it in the prompt (“when they say they signed, mark it”) — the agent is not in that conversation and the signature happens days later, elsewhere; an inbound lead webhook (it upserts a lead, it does not record an outcome); an outbound webhook (that is Nexor telling them, the direction is reversed); a scheduled function *first* (correct only when their system cannot make any outgoing call — see below).
+**Rejected rungs:** counting it in the prompt (“when they say they signed, mark it”) — the agent is not in that conversation and the signature happens days later, elsewhere; an inbound lead webhook (it upserts a lead, it does not record an outcome); an outbound webhook (that is Nexor telling them, the direction is reversed); a scheduled function *first* (correct only when their external tool cannot make any outgoing call — see below).
 
-**Applies to** every goal that is not booking a meeting or collecting a Nexor payment link: qualification, information, support, document collection, quote, sale, custom. The agent qualifies, a human or another system closes, and without this the account reports zero conversions while the business is closing every week.
+**Applies to** every goal that is not booking a meeting or collecting a Nexor payment link: qualification, information, support, document collection, quote, sale, custom. The agent qualifies, a human or an external tool closes, and without this the account reports zero conversions while the business is closing every week.
 
-**Ask exactly two things.** Which system knows the moment of conversion, and how that system identifies the person: the email, the phone, or the Nexor `lead_id` it stored from an outbound webhook or the leads API response. Do not ask what to put in `metadata` — propose keys from what the customer already said (deal id, product, seller, branch, plan) and let them trim.
+**Ask exactly two things.** Which external tool (CRM, ERP, own backend, spreadsheet) knows the moment of conversion, and how that tool identifies the person: the email, the phone, or the Nexor `lead_id` it stored from an outbound webhook or the leads API response. Do not ask what to put in `metadata` — propose keys from what the customer already said (deal id, product, seller, branch, plan) and let them trim.
 
 **1. Set the destination first**, so the lead lands somewhere the moment the first real event arrives:
 
@@ -852,7 +853,7 @@ set_conversion_destination({ "workflow_id": "<qualifier>", "destination_workflow
 
 Use `agent_group_id` instead of `workflow_id` when every agent in the group should share the fallback. A named conversion type is optional: add one with `set_conversion_type` only when the customer wants the events labelled by name in reports or a default currency — it is never a prerequisite.
 
-**2. The request their system sends** when the deal reaches its won stage (from the CRM's own webhook/automation, from a Zapier / Make / n8n HTTP step, or from their application):
+**2. The request their external tool sends** when the deal reaches its won stage (from the CRM's own webhook/automation, from a Zapier / Make / n8n HTTP step, or from their application):
 
 ```http
 POST https://api.getnexor.ai/api/public/conversions
@@ -868,8 +869,72 @@ Content-Type: application/json
 
 Only the lead identifier is required. Everything the business will want to slice by later goes in `metadata`, never inside the description: it is shown on the lead, delivered to cloud functions on `conversion.detected`, and filterable with `metadata[key]=value`.
 
-**3. When their system cannot call out at all**, invert the direction: a Scheduled Function on a cron that queries their API for deals closed since the last run and posts one conversion per lead. Same endpoint, same payload. Do not offer this when a webhook or a Zapier step is available — it adds a polling window and code to maintain.
+**3. When their external tool cannot call out at all**, invert the direction: a Scheduled Function on a cron that queries their API for deals closed since the last run and posts one conversion per lead. Same endpoint, same payload. Do not offer this when a webhook or a Zapier step is available — it adds a polling window and code to maintain.
 
 **Already covered without any of this:** a Shopify store (orders are recorded automatically) and HubSpot deal sync (a won deal emits the conversion). Confirm those, then ask whether any *other* outcome closes outside them.
 
 **Verify:** post one real event for a test lead, then `list_conversions({ lead_id: "<test lead>" })` must return it with the amount, description and metadata as sent; `get_workflow({ workflow_id: "<qualifier>" })` must read back `conversion_destination` with the expected agent and status and `source: "own"` (or `"group"` when the fallback is the group's); and the test lead must now have a fresh run on the destination agent. Until both read-backs pass, the wiring is pending, not done.
+
+---
+
+## 25. “Sell tickets on our ecommerce and follow up with a discount”
+
+**Primitive:** the default shape — 2–3 modes split by intent and register, chained by terminal transfers, inside one agent. Brief: *"We sell event tickets on our online store. The agent should sell them, and if people don't buy, follow up and offer a discount."*
+
+**Sizing.** Three intents with three registers: get the lead to buy now (warm, informative, answers questions, sends the checkout link); bring back a lead who did not complete checkout (short reminders on a cadence, resolves blockers, no new offer); close a still-unconverted lead with the approved discount (one concession, a deadline, then close or stop). That is three modes. Two if the operator has no plain-reminder motion and the discount *is* the follow-up (the reminder and the concession then share intent and register). Never one broad "sales" mode — the review blocks a single-mode plan unless the operator explicitly asked for exactly one (`plan.decomposition.single_mode_explicitly_requested` with their quoted words) — and never a mode per message.
+
+**Mode ledger:**
+
+| ref | intent | register | boundary out |
+|---|---|---|---|
+| `sell_tickets` (entry) | buy a ticket now | warm, informative, checkout link | `not_purchased` (terminal, after the stage timeout) → `follow_up_unpaid` |
+| `follow_up_unpaid` | complete the abandoned checkout | short reminders on a cadence, blockers only | `still_unpaid` (terminal) → `offer_discount` |
+| `offer_discount` | accept the approved discount | one concession, deadline, close or stop | `purchased` / `declined` (terminal, no transfer) |
+
+**Preflight** (plan-local refs, one plan agent per mode; only `sell_tickets` is the entry point, so no `entry_point` flags are needed):
+
+```json
+{
+  "agents": [
+    {
+      "ref": "sell_tickets", "name": "Sell event tickets", "goal_type": "sale",
+      "primary_responsibility": "Get the lead to buy a ticket on the store.",
+      "language": "en", "timezone": "America/Los_Angeles", "channels": ["whatsapp"],
+      "statuses": [
+        { "key": "new", "is_initial": true },
+        { "key": "link_sent", "entry_hint": "The checkout link was sent for a chosen event and quantity." },
+        { "key": "purchased", "entry_hint": "The order is confirmed.", "is_terminal": true, "category": "won" },
+        { "key": "not_purchased", "entry_hint": "No order after the wait window.", "is_terminal": true, "transfer_to_agent_ref": "follow_up_unpaid" }
+      ]
+    },
+    {
+      "ref": "follow_up_unpaid", "name": "Follow up abandoned checkouts", "goal_type": "sale",
+      "primary_responsibility": "Bring the lead back to complete the purchase without changing the offer.",
+      "language": "en", "timezone": "America/Los_Angeles", "channels": ["whatsapp"],
+      "statuses": [
+        { "key": "new", "is_initial": true },
+        { "key": "purchased", "entry_hint": "The order is confirmed.", "is_terminal": true, "category": "won" },
+        { "key": "still_unpaid", "entry_hint": "Reminders exhausted and no order.", "is_terminal": true, "transfer_to_agent_ref": "offer_discount" }
+      ]
+    },
+    {
+      "ref": "offer_discount", "name": "Offer the discount", "goal_type": "sale",
+      "primary_responsibility": "Close with the approved discount or stop.",
+      "language": "en", "timezone": "America/Los_Angeles", "channels": ["whatsapp"],
+      "statuses": [
+        { "key": "new", "is_initial": true },
+        { "key": "purchased", "entry_hint": "The discounted order is confirmed.", "is_terminal": true, "category": "won" },
+        { "key": "declined", "entry_hint": "The deadline passed or the lead refused.", "is_terminal": true, "category": "lost" }
+      ]
+    }
+  ]
+}
+```
+
+`review_agent_system_plan` returns `decomposition: { mode_count: 3, entry_points: ["sell_tickets"], orphan_modes: [] }` and no decomposition issue; show that in the summary, close with "Does this look ok? Let me know and I'll build it." and get sign-off; never show the `plan_fingerprint`.
+
+**Build:** `create_workflow` per mode, each with its complete funnel; the wait before `not_purchased` is `timeout_config` on `link_sent` aimed at `not_purchased` (recipe 23 — the delay is a stage timeout, never a job); the checkout link is a `set_payment_link` `lead` key or `fixed` URL when the store gives one link per event, or a customer API tool that creates the cart (recipe 11 shape); the follow-up cadence is `set_workflow_cadence` on `follow_up_unpaid`; the discount code and its deadline are Law 1 variables in the `offer_discount` prompt's transferred context, not prose. Reconcile the connection manifest (`not_purchased → <follow_up_unpaid id>`, `still_unpaid → <offer_discount id>`) once every id is real, per recipe 19.
+
+**Verify:** a raw conversation that ignores the link must, after the timeout, show a `transferred` source run and a fresh `follow_up_unpaid` run; the follow-up's first message references the chosen event without re-asking it (recipe 22 arrival rule); after its cadence exhausts, a fresh `offer_discount` run whose first message carries the discount and the deadline.
+
+**Rejected rungs:** one mode whose prompt says "if they don't buy, remind them, then offer 10% off" (three intents and registers in one unfenced prompt: nothing gates the discount, nothing cadences the reminders separately, nothing can transfer); five modes (choose event → send link → remind once → remind twice → discount) — the middle three share intent and register and are statuses or cadence steps, not modes; a scheduled function polling for abandoned carts when the stage timeout already expresses the wait.

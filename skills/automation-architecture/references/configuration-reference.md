@@ -93,7 +93,7 @@ Full `transition_rules` shape:
 
 A terminal status with `category: "lost"` is the discard mechanism. The disqualification rule is configured visibly in the agent (`entry_hint` + `transition_rules`) and processed internally during the conversation. `lost` means **"stop initiating," not "stop responding"**: all proactive outbound halts (cadence and jobs skip the lead as `status_lost`), the run cannot be reactivated — but if the lead writes in, the agent still replies briefly and kindly under built-in lost-lead behavior (no selling, no booking offers). Choose by intent:
 
-- **Discard** ("stop pursuing"): terminal + `category: "lost"`. Attach a status automation or filtered webhook when the customer's system must also be told. Add `pause_bot` only if the customer wants total silence, including to inbound messages.
+- **Discard** ("stop pursuing"): terminal + `category: "lost"`. Attach a status automation or filtered webhook when the customer's CRM or external API must also be told. Add `pause_bot` only if the customer wants total silence, including to inbound messages.
 - **Hold** ("stop responding while a human reviews"): `pause_bot` — the run stays live, the agent just goes quiet while the lead sits there.
 - **Defer** ("not now, recontact later"): `futurology_queue` parking bucket + a re-activation mechanism (§8).
 
@@ -320,7 +320,7 @@ Two mechanisms fire when a lead reaches a status. Pick by delivery contract:
 | Fires | Every matching event | Exactly once per lead per rule |
 | Configured | Client-level subscription + filters | Per status, in workflow config |
 | Body | Standard envelope or `payload_template` | Any HTTP tool + `args_template` |
-| Use for | "Tell my system whenever…" (logging, mirroring, alerting) | "Do this to my system once when the lead gets here" (create CRM deal, trigger fulfillment) |
+| Use for | "Tell my external API whenever…" (logging, mirroring, alerting) | "Do this in my CRM / external API once when the lead gets here" (create CRM deal, trigger fulfillment) |
 
 Both are more reliable than instructing the agent to notice the status and call a tool. The status transition itself invokes them. Prefer these whenever the transition fully defines the action timing.
 
@@ -402,7 +402,7 @@ Effects API: `upsertLead({email?, phone?, firstName?, lastName?, source?, metada
 
 Chaining differs from cloud functions: `assignLead` re-emits events (a sweep can assign and let an event function react per lead), but `tagLead` does **not** emit a tag event.
 
-**Syncing leads in from an external system** — two working shapes:
+**Syncing leads in from an external tool (CRM, spreadsheet, own backend)** — two working shapes:
 
 1. **Atomic import exception:** fetch from the external API with `axios`, then call `POST /api/public/leads` (API key stored in an Environment Variable) for each record only when the same run must perform upsert + metadata merge + `workflow_id` enrollment + first contact. This direct API path exists because the effect-based upsert does not return the new id; it is not a lead-read path.
 2. **Two-phase effects:** run A calls `upsertLead` with a marker (`source: "crm_sync"`); run B's lookup filters on that marker and calls `assignToWorkflow` / `setLeadStatus` on the now-existing leads. Needed because effects return nothing — a function cannot learn a new lead's id in the same run.
@@ -440,10 +440,11 @@ What the platform does on transfer:
 Design rules:
 
 - Every hop restarts cadence. If the "transfer" is a stage of the same conversation, it's a status, not a transfer.
+- The default shape of an agent is 2–3 modes split by intent and register (sell → follow up → discount), each behind a terminal transfer; one mode only on the operator's explicit, quoted instruction (`plan.decomposition.single_mode_explicitly_requested`), never five or more. `review_agent_system_plan` gates both ends deterministically.
 - Auto-transfer is skipped while the lead is waiting on a human (support handoff).
 - The target agent's prompt should explicitly read the transferred context ("budget and need are in the transfer chain — do not re-ask").
 - The source agent does not speak the hand-off. Its prompt moves the lead to the boundary status when the criterion is met and ends the turn — no "I'll pass you to a colleague", no "the link is on its way", no farewell. The platform makes the target speak next (step 5); a narrated hand-off produces two voices and a promise the source cannot keep.
-- The target agent's prompt carries an explicit arrival rule — what the lead already did, which transferred facts are never re-asked, and what the very first message is — because that message is composed from the target's own prompt when the window is open. A payment-link target's arrival message is one line of context plus the payment link (recipe 21); configure `set_payment_link` first, since both the built-in transactional tool and `{{payment_link}}` templates read it.
+- The target agent's prompt carries an explicit arrival rule — what the lead already did, which transferred facts are never re-asked, and what the very first message is — because that message is composed from the target's own prompt when the window is open. A payment-link target's arrival message is one line of context plus the payment link (recipe 22); configure `set_payment_link` first, since both the built-in transactional tool and `{{payment_link}}` templates read it.
 - Editing one member of an agent group starts by reading the group: the siblings, the statuses that transfer into and out of the edited agent, and the shared channel bindings. Both sides of every boundary must stay consistent.
 
 ### Boundary shapes: terminal handoff vs pause handoff
