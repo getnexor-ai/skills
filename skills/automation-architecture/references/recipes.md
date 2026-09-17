@@ -601,7 +601,7 @@ Two agents, because the closer differs in goal, prompt, tools, and cadence — n
   "open_questions": ["Confirm the closer's cadence intensity."] } } }
 ```
 
-Resolve every `blocking_issue` and `clarification_question`, then show the summary and ask the returned `signoff_prompt` verbatim. **No mutation happens before the user approves the `plan_fingerprint`.**
+Resolve every `blocking_issue` and `clarification_question`, then show the summary and close with "Does this look ok? Let me know and I'll build it." **No mutation happens before the user approves the summarized plan. The `plan_fingerprint` is internal: never show it or the word "fingerprint" to the user.**
 
 ### Phase 4 — build (agents are created paused)
 
@@ -725,7 +725,7 @@ Plan the appointment agent with its booking block, then `review_agent_system_pla
 }], "open_questions": [] }
 ```
 
-Show the summary, ask the `signoff_prompt`, wait for the fingerprint approval.
+Show the summary, close with "Does this look ok? Let me know and I'll build it.", wait for the user's approval (never show the `plan_fingerprint`).
 
 ### Phase 3 — build, in dependency order (agent stays paused)
 
@@ -931,7 +931,7 @@ Only the lead identifier is required. Everything the business will want to slice
 }
 ```
 
-`review_agent_system_plan` returns `decomposition: { mode_count: 3, entry_points: ["sell_tickets"], orphan_modes: [] }` and no decomposition issue; show that with the fingerprint and get sign-off.
+`review_agent_system_plan` returns `decomposition: { mode_count: 3, entry_points: ["sell_tickets"], orphan_modes: [] }` and no decomposition issue; show that in the summary, close with "Does this look ok? Let me know and I'll build it." and get sign-off; never show the `plan_fingerprint`.
 
 **Build:** `create_workflow` per mode, each with its complete funnel; the wait before `not_purchased` is `timeout_config` on `link_sent` aimed at `not_purchased` (recipe 23 — the delay is a stage timeout, never a job); the checkout link is a `set_payment_link` `lead` key or `fixed` URL when the store gives one link per event, or a customer API tool that creates the cart (recipe 11 shape); the follow-up cadence is `set_workflow_cadence` on `follow_up_unpaid`; the discount code and its deadline are Law 1 variables in the `offer_discount` prompt's transferred context, not prose. Reconcile the connection manifest (`not_purchased → <follow_up_unpaid id>`, `still_unpaid → <offer_discount id>`) once every id is real, per recipe 19.
 
