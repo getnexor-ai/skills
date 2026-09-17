@@ -85,7 +85,7 @@ Deleting an agent group is relationship-only: it removes the group and clears ea
 
 | Opening (first) message per channel | `set_opening_message` — `channel:'call'` → `message` (spoken opening line; `''` restores the language default), `agent_speaks_first` (default true), `silence_ms` (1000–30000 when the lead speaks first); `channel:'email'` → fixed first `subject` + `body` (`enabled:false` + empty removes it); `channel:'webchat'` → widget `message`; `channel:'sms'` → fixed first outbound SMS `message` (a legally required STOP notice is still appended for US numbers); `channel:'messenger'` → fixed first reply `message` in a new Messenger conversation. `''` clears any of them so the agent composes from the prompt. `create_workflow` also takes `begin_message` so a call agent is born with its opener. WhatsApp openers stay approved templates (`set_opening_templates`) because Meta must approve the text | `get_workflow` → `opening_messages.{call,email,webchat,sms,messenger}` |
 | Base prompt | `set_workflow_prompt` — returns `{ status: "saved", prompt_length }` **only** when the backend proves the stored length matches what was sent; otherwise it fails `CONFLICT` / `PROMPT_NOT_SAVED`. A prompt is written only when you see `saved` | `get_workflow`, `get_workflow_prompt_history` |
-| Per-channel prompt | `set_channel_prompt` | `get_workflow` |
+| Per-channel prompt | `set_channel_prompt` — one call per channel; for `sms` and `imessage` this is the only prompt the outbound composer reads when it exists. A behavior change the operator did not scope to one channel goes here for every channel with a body, in addition to `set_workflow_prompt` | `get_workflow` → channel prompts |
 | Create the agent + skeleton statuses + fields | `create_workflow` | `get_workflow` |
 | Add/edit statuses & fields (upsert, never deletes) | `update_workflow_structure` | `get_workflow` |
 | Reorder every status after the protected semantic head | `reorder_workflow_statuses` with the complete persisted tail | `get_workflow` |
@@ -155,7 +155,7 @@ The single most dangerous class of mistake: assuming a write merges when it repl
 | `update_workflow_structure` | Upsert by key; **never deletes** | Removing a status needs `delete_workflow_status` |
 | `reorder_workflow_statuses` | Atomic complete-tail replacement; the first three semantic stages stay fixed | Read `get_workflow`, submit every persisted tail key exactly once, then read back and compare |
 | `update_workflow_status` | Field-level merge, but `null` **clears** the block | Pass `null` only to intentionally clear |
-| `set_workflow_prompt` | **Full overwrite** of the global prompt | `get_workflow` first, edit, send whole |
+| `set_workflow_prompt` | **Full overwrite** of the global prompt; channel prompts untouched, so a behavior change is incomplete until each channel with a body gets it via `set_channel_prompt` | `get_workflow` first, edit, send whole, then the channel prompts |
 | `set_workflow_cadence` | Whole-document PUT for `blocks`; `dayConfig` keys omitted are **preserved** | `get_workflow_cadence` first, send the full edited document |
 | `set_workflow_qualification` | Merge by natural key; `replace: true` deletes and replaces | Default to merge |
 | `set_workflow_voice` | Switches the voice AND/OR merges tuning keys | To change the voice pass **one** of `gender` (`male`/`female`), `voice_id`, or `voice_name` — the server resolves and writes the effective voice, and returns `resolved_voice.preview_url` to share. Tuning knobs (`voiceSpeed`, …) go in the `voice` object |
