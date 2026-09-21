@@ -426,6 +426,16 @@
     "workflow_tools",
     "workflow_transfer",
     "contact_schedule",
-    "first_agent_setup"
+    "birth_defaults",
+    "channel_bindings",
+    "owned_by_other_agent",
+    "channel_binding_failed",
+    "requested_name_ignored",
+    "agent_group",
+    "already_bound_in_group",
+    "client_scoped_available",
+    "no_resource",
+    "inventory_unavailable",
+    "enabled_channels"
   ]
 }

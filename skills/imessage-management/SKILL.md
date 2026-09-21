@@ -122,7 +122,16 @@ duration) and the internal nickname are not editable anywhere, by decision.
 - **Photo**: `set_imessage_profile_photo({ number_id, image_url })` — a public http(s)
   image URL (jpeg/png/gif/webp, ≤ 5 MB). Photos can be **replaced but never removed**;
   do not promise to delete one. This tool does not upload files: the image must already
-  be hosted.
+  be hosted. When the operator only has the file, point them to the dashboard's iMessage
+  identity editor, which uploads it for them.
+- **WhatsApp on the same line**: when `get_imessage_number` shows `whatsappStatus:
+  "ready"`, the line also runs WhatsApp and shares this identity — every name/photo
+  write is mirrored to the WhatsApp profile (`whatsappName`, `whatsappAvatarUrl` show
+  what it currently displays). WhatsApp's limits then apply to the whole write: the name
+  is shown as one line, first + last joined, **at most 25 characters**; the photo must
+  be a **square JPG or PNG between 192 and 640 px**. A write WhatsApp cannot hold fails
+  with `fieldErrors.whatsappName` / `fieldErrors.whatsappAvatarUrl` and changes
+  **nothing on either channel** — say so and ask for a shorter name or a square photo.
 - **Precedence**: by default the name follows the agent's persona and is re-synced on
   assignment. Once you set a name by hand it becomes **authoritative** — it stops
   following the agent, including on re-assignment. Say this when an operator asks why
