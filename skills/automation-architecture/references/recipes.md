@@ -212,7 +212,7 @@ The rule lives in `entry_hint` — not `description`, which the agent never sees
 ```
 
 3. Configure `<sales-now-agent>` with a hyper-specific sales/appointment prompt, only the ownership and booking tools it needs, stage gates for those tools, and the high-intensity contact schedule approved by the customer.
-4. Configure `<nurture-later-agent>` with an educational, low-pressure prompt and email as its only outbound nurture channel. Do not copy the source qualification fields into it; instruct it to read fit, need, and timeline from the transfer chain.
+4. Configure `<nurture-later-agent>` with an educational, low-pressure prompt and email as its only outbound nurture channel. A bare "nurture" ask defaults to exactly this: a separate, low-intensity, **email-only** workflow that sends roughly **one email every 2-4 weeks** (`336`–`672` hours) — not the sales cadence slowed down. Do not copy the source qualification fields into it; instruct it to read fit, need, and timeline from the transfer chain.
 5. For a three-month nurture example at approximately two emails per month, configure the target's active nurture status with:
 
 ```json
