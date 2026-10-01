@@ -162,7 +162,7 @@ Names announced by in-flight MCP work go under `pending` in the manifest; the ge
 
 ## Repository
 
-This is the canonical repository (`getnexor-ai/skills`). CI runs lint, tests, and the prepublish check on every pull request; every push to `main` publishes to npm as `@nexor/skills`.
+This is the canonical repository (`getnexor-ai/skills`). CI runs lint, tests, and the prepublish check on every pull request. There is no automated npm publish.
 
 ## License
 
